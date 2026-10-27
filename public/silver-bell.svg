@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none">
+<defs>
+ <radialGradient id="rubber"><stop offset=".6" stop-color="#353b3b"/><stop offset=".9" stop-color="#101514"/><stop offset="1" stop-color="#070b0a"/></radialGradient>
+ <radialGradient id="steel"><stop offset="0" stop-color="#e5eaec"/><stop offset=".25" stop-color="#fafcfd"/><stop offset=".46" stop-color="#b9c3c8"/><stop offset=".64" stop-color="#edf2f4"/><stop offset=".8" stop-color="#fff"/><stop offset=".9" stop-color="#8b989e"/><stop offset=".96" stop-color="#edf4f7"/><stop offset="1" stop-color="#69777e"/></radialGradient>
+ <linearGradient id="reflection" x1="29" y1="28" x2="145" y2="148" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset=".24" stop-color="#eaf1f4" stop-opacity=".2"/><stop offset=".45" stop-color="#82929b" stop-opacity=".65"/><stop offset=".53" stop-color="#fff" stop-opacity=".85"/><stop offset=".72" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#81929b" stop-opacity=".55"/></linearGradient>
+ <radialGradient id="knob" cx=".35" cy=".25" r=".8"><stop stop-color="#515b5d"/><stop offset=".65" stop-color="#232a2c"/><stop offset="1" stop-color="#070c0d"/></radialGradient>
+ <filter id="shadow" x="-25%" y="-25%" width="150%" height="155%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#001d12" flood-opacity=".65"/></filter>
+</defs>
+<g filter="url(#shadow)">
+ <circle cx="90" cy="90" r="75" fill="url(#rubber)"/>
+ <circle cx="90" cy="90" r="70" fill="url(#steel)" stroke="#cbd5d9" stroke-width="1.5"/>
+ <circle cx="90" cy="90" r="66" fill="url(#reflection)"/>
+ <path d="M41 57A59 59 0 0 1 104 32" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".8"/>
+ <path d="M143 73A56 56 0 0 1 106 145" stroke="#f8fdff" stroke-width="3" stroke-linecap="round" opacity=".85"/>
+ <path d="M33 97A58 58 0 0 0 67 143" stroke="#657b87" stroke-width="3" stroke-linecap="round" opacity=".35"/>
+ <circle cx="90" cy="90" r="28" fill="#e5edf0" stroke="#85949b" stroke-width="1.5"/>
+ <circle cx="90" cy="90" r="23" fill="#bdc9d0" stroke="#fbffff" stroke-width="1.4"/>
+ <circle cx="90" cy="90" r="19" fill="url(#knob)" stroke="#151e20" stroke-width="2"/>
+ <path d="M78 84A14 14 0 0 1 94 77" stroke="#7f8a8e" stroke-width="1.5" stroke-linecap="round" opacity=".65"/>
+</g></svg>

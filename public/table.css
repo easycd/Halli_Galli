@@ -1,0 +1,110 @@
+/* Physical card table; glass remains on surrounding panels. */
+.game-layout>.game-center{height:730px;min-height:730px;background-color:#175a43;background-image:radial-gradient(ellipse at 48% 45%,#31846455 0,transparent 72%),repeating-radial-gradient(circle at 20% 30%,#ffffff03 0 1px,#00000004 1px 2px,transparent 2px 4px);border:8px solid #194b39;border-radius:30px;box-shadow:inset 0 0 0 2px #4f8c6659,inset 0 0 30px #002b2099,0 12px 30px #3c3b241a;backdrop-filter:none;overflow:hidden}
+.game-layout>.panel{height:730px}
+.game-center .table-meta{padding:17px 19px 6px;min-height:85px}
+.game-center .in-game-ranks,.game-center .in-game-ranks .eyebrow,.game-center .game-status{color:#e1eee4}
+.game-center .rank-chip{background:#0b392a9c;color:#f4f7ee;border:1px solid #ffffff14;font-size:10px}
+.game-center .rank-chip strong{color:#f8df9c}
+.game-center .game-status .pill{background:#113f30;color:#eef6e9;border-color:#78a28b66}
+.game-center .game-status .dot{background:#d8df9c}
+.game-center .game-table{min-height:520px;margin:8px 20px 0}
+.game-center .table-ring{border:1px solid #a9cdac17;box-shadow:none;inset:12% 10% 10%}
+.game-center .table-ring:after{border-color:#b6d5b312;inset:12px}
+.game-center .seat{width:135px}
+.seat-piles{display:flex;align-items:center;justify-content:center;gap:9px;min-height:103px}
+.game-center .playing-card{width:65px;height:99px;margin:0;border:1px solid #e9e6dc;border-radius:7px;flex-shrink:0;background:#fffefa;box-shadow:var(--pile-shadow,none);position:relative;overflow:visible}
+.hidden-deck{width:43px;height:68px;border-radius:5px;border:2px solid #fffcf5;position:relative;flex-shrink:0;box-shadow:var(--pile-shadow,none);padding:0;background-color:#f1c4dc;overflow:visible;color:#fff}
+.hidden-deck.card-back{background-image:repeating-linear-gradient(40deg,transparent 0 7px,#a7548830 7px 8px,transparent 8px 16px);background-color:#e6b7d2}
+.deck-pattern{position:absolute;inset:3px;border:1px solid #a0527e99;border-radius:3px;background:radial-gradient(ellipse at 25% 25%,transparent 0 8px,#a0527e77 8px 9px,transparent 9px),radial-gradient(ellipse at 80% 75%,transparent 0 9px,#a0527e77 9px 10px,transparent 10px)}
+.deck-count{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#633451eb;border:1px solid #fff7;border-radius:7px;min-width:24px;padding:0 4px;height:24px;line-height:22px;text-align:center;color:#fff9ef;font-size:12px;font-weight:750;font-variant-numeric:tabular-nums;z-index:1}
+.hidden-deck.empty-deck{background:transparent;border:1px dashed #c0d8c657;box-shadow:none}
+.empty-deck .deck-pattern{display:none}.empty-deck .deck-count{background:#194d3a;border-color:#6a927c}
+.game-center .playing-card.empty-pile{background:#0e483529;border:1px dashed #b1d2bd38;box-shadow:none}
+.game-center .seat.current .playing-card{box-shadow:var(--pile-shadow,none)}
+.game-center .seat.current .hidden-deck{outline:2px solid #e5d08a;outline-offset:3px}
+.game-center .seat.mine .hidden-deck:enabled{cursor:pointer;outline:3px solid #fff0ae;outline-offset:4px}
+.game-center .seat.mine .hidden-deck:enabled:hover{filter:brightness(1.1);transform:translateY(-3px)}
+.game-center .seat.mine .hidden-deck:enabled:active{transform:translateY(1px)}
+.game-center .hidden-deck:disabled{opacity:1;cursor:default}
+.game-center .hidden-deck:focus-visible{outline:3px solid white;outline-offset:5px}
+.game-center .seat.mine .hidden-deck::after{content:'';position:absolute;inset:-7px;min-width:44px;min-height:44px}
+.game-center .seat-name{color:#f7f4e5;margin-top:10px;font-size:10px;font-weight:650}
+.game-center .seat-name .me{color:#ffe9a0}.game-center .seat-status{color:#cbdfd1;font-size:9px}
+.game-center .seat.out{opacity:.36}
+.game-center .card-fruits{position:relative;width:100%;height:100%;display:block;padding:0}
+.game-center .card-fruits>span{position:absolute;left:var(--fruit-x);top:var(--fruit-y);width:45%;height:34%;transform:translate(-50%,-50%);display:block}
+.game-center .card-fruits>span svg{width:100%;height:100%;display:block}
+.game-center .card-fruits.n1>span{width:80%;height:67%}
+.game-center .card-fruits.n2>span{width:54%;height:44%}
+.game-center .card-fruits.n3>span{width:48%;height:35%}
+.game-center .card-fruits.n5>span{width:43%;height:31%}
+.game-center .bell-control{width:150px;height:139px;left:50%;top:51%;border:0;border-radius:50%;background:transparent;box-shadow:none;padding:0;display:block;filter:none;opacity:1}
+.game-center .bell-control img{width:100%;height:100%;display:block;pointer-events:none;filter:drop-shadow(0 10px 9px #00241955)}
+.game-center .bell-control:hover:not(:disabled){background:transparent;box-shadow:none;filter:brightness(1.08)}
+.game-center .bell-control:active:not(:disabled){transform:translate(-50%,-48%)}
+.game-center .bell-control:focus-visible{outline:2px solid #f4e7b4;outline-offset:5px}
+.game-center .game-controls{padding:12px 19px;min-height:60px;background:#0b382a75;border-color:#82af921f}
+.game-center .my-cards{color:#d6e4d8}.game-center .my-cards strong{color:#fff5db;font-size:23px}
+.game-center .controls-right .button.secondary{color:#e9f3e8;border-color:#93b39e55;background:#2c6a505c}
+.game-center .notice-bar{background:#0b382a75;color:#e0e9df;border-bottom:1px solid #82af921f;min-height:34px;font-size:11px}
+.game-center .waiting-overlay{top:44%;background:#fffaf0f5}.game-center .waiting-overlay h2{margin-top:0}
+.page-foot{justify-content:flex-end}.page-foot .runtime-badge{margin-right:auto}
+@media(min-width:1600px){.game-layout>.game-center,.game-layout>.panel{height:780px;min-height:780px}.game-center .game-table{min-height:570px}}
+@media(max-width:1150px){.game-center .game-table{margin-left:8px;margin-right:8px}.game-center .seat{width:118px}.game-center .playing-card{width:59px;height:91px}.hidden-deck{width:36px;height:58px}.seat-piles{gap:7px}}
+@media(max-width:930px){.game-layout>.chat-panel{height:240px;min-height:0}.game-layout>.presence{height:730px;min-height:0}}
+@media(max-width:650px){.game-layout>.game-center{height:730px;min-height:730px;border-width:5px;border-radius:24px}.game-center .table-meta{padding:15px 11px 3px;min-height:92px}.game-center .game-table{min-height:505px;margin:0 7px}.game-center .seat{width:87px}.game-center .playing-card{width:48px;height:74px;border-radius:5px}.game-center .hidden-deck{width:28px;height:45px;border-radius:4px}.game-center .deck-pattern{inset:2px}.game-center .deck-count{min-width:20px;height:21px;line-height:19px;font-size:10px;padding:0 2px;border-radius:5px}.seat-piles{min-height:80px;gap:5px}.game-center .seat-name{font-size:8px;margin-top:12px}.game-center .seat-status{font-size:8px}.game-center .bell-control{width:106px;height:99px}.game-center .rank-chip{font-size:8px}.game-center .game-controls{padding:10px 12px}.game-layout>.presence{height:auto;min-height:0;max-height:310px}.game-layout>.chat-panel{height:280px;min-height:0}.game-center .notice-bar{font-size:10px;padding:7px 9px}.game-center .in-game-ranks{max-width:60%}.game-center .waiting-overlay{width:85%;padding:20px}}
+
+/* Circular seating and radial private/public piles. */
+.game-layout>.game-center{height:auto;min-height:980px}
+.game-layout>.panel{height:auto;min-height:980px}
+.game-center .game-table{width:calc(100% - 44px);max-width:760px;aspect-ratio:1;min-height:0;flex:0 0 auto;margin:32px auto 64px;isolation:isolate}
+.game-center .table-ring{inset:19%;border-radius:50%;border-color:#add6b629}
+.game-center .table-ring:after{inset:-9px;border-color:#add6b61a}
+.game-center .seat{width:1px;height:1px;--pile-offset:56px;--label-y:calc(var(--label-factor) * var(--pile-offset) + 58px);z-index:2}
+.game-center .seat-piles{position:absolute;left:0;top:0;display:block;width:0;height:0;min-height:0;perspective:600px}
+.game-center .hidden-deck{position:absolute;left:calc(var(--radial-x) * var(--pile-offset));top:calc(var(--radial-y) * var(--pile-offset));width:49px;height:76px;transform:translate(-50%,-50%) rotate(var(--seat-rotation));z-index:1}
+.game-center .playing-card{position:absolute;left:calc(var(--radial-x) * var(--pile-offset) * -1);top:calc(var(--radial-y) * var(--pile-offset) * -1);width:65px;height:99px;transform:translate(-50%,-50%) rotate(var(--seat-rotation));z-index:2}
+.game-center .seat.mine .hidden-deck:enabled:hover{transform:translate(-50%,-50%) rotate(var(--seat-rotation)) scale(1.04)}
+.game-center .seat.mine .hidden-deck:enabled:active{transform:translate(-50%,-50%) rotate(var(--seat-rotation)) scale(.98)}
+.game-center .seat-name{position:absolute;left:0;top:var(--label-y);transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:4px;margin:0;min-width:91px;max-width:140px;min-height:29px;padding:4px 11px;border-radius:11px;background:var(--name-bg);border:1px solid #ffffff70;color:#283b31;box-shadow:0 4px 9px #002d2633;font-size:11px;white-space:nowrap;z-index:4}
+.game-center .seat-name .me{color:#334d3c;background:#ffffff75;padding:0 4px;border-radius:4px;font-size:9px}
+.game-center .seat-status{position:absolute;left:0;top:calc(var(--label-y) + 34px);transform:translateX(-50%);width:140px;text-align:center;font-size:10px}
+.game-center .bell-control{top:50%;width:148px;height:148px}
+.game-center .game-controls{margin-top:auto}
+.flip-flight{position:absolute;left:0;top:0;width:65px;height:99px;transform-style:preserve-3d;pointer-events:none;z-index:8;box-shadow:0 7px 17px #001e1666;border-radius:7px}
+.flip-face{position:absolute;inset:0;border:1px solid #ede9df;border-radius:7px;backface-visibility:hidden;background:#fffefa;overflow:hidden}
+.flip-back.card-back{background-color:#e6b7d2;background-image:repeating-linear-gradient(40deg,transparent 0 7px,#a7548830 7px 8px,transparent 8px 16px)}
+.flip-front{transform:rotateX(180deg)}
+@media(max-width:1150px){.game-center .seat{--pile-offset:47px;--label-y:calc(var(--label-factor) * var(--pile-offset) + 51px)}.game-center .hidden-deck{width:43px;height:66px}.game-center .playing-card,.flip-flight{width:57px;height:88px}.game-center .seat-name{min-width:80px;font-size:10px}}
+@media(max-width:930px){.game-layout>.chat-panel{height:260px;min-height:0}.game-layout>.presence{height:auto;min-height:980px}.game-center .game-table{width:calc(100% - 28px)}}
+@media(max-width:650px){.game-layout>.game-center{height:auto;min-height:760px}.game-center .game-table{width:calc(100% - 22px);max-width:430px;margin:72px auto 95px;min-height:0}.game-center .seat{--pile-offset:27px;--label-y:calc(var(--label-factor) * var(--pile-offset) + 31px)}.game-center .hidden-deck{width:28px;height:43px}.game-center .playing-card,.flip-flight{width:34px;height:52px;border-radius:4px}.game-center .seat-name{min-width:60px;max-width:82px;min-height:22px;padding:2px 5px;border-radius:8px;font-size:8px;gap:2px}.game-center .seat-name .me{font-size:7px;padding:0 2px}.game-center .seat-status{top:calc(var(--label-y) + 25px);font-size:8px;width:90px}.game-center .bell-control{width:76px;height:76px}.game-center .deck-count{font-size:9px;min-width:18px;height:19px;line-height:17px}.game-center .seat.mine .hidden-deck::after{inset:-8px}.game-layout>.presence{min-height:0;height:auto}.game-layout>.chat-panel{height:280px;min-height:0}}
+@media(prefers-reduced-motion:reduce){.flip-flight{display:none}.game-center .seat.mine .hidden-deck:enabled:hover{transform:translate(-50%,-50%) rotate(var(--seat-rotation))}}
+
+@media(max-width:650px){.game-center .seat{--label-y:var(--mobile-label-y)}}
+
+/* A light control strip separates actions from the green playing surface. */
+.game-center .notice-bar{background:#eee1c8;color:#514332;border-top:1px solid #d6c3a0;border-bottom:1px solid #d9c9ad;padding:10px 18px;margin-top:auto}
+.game-center .game-controls{background:#fff5e4;border-color:#d9c9ad;padding:17px 20px;min-height:88px;box-shadow:inset 0 1px 0 #fffaf2;margin-top:0}
+.game-center .my-cards{color:#66543f}.game-center .my-cards strong{color:#372e24}
+.game-center .controls-right .button.secondary{background:#fffdf7;color:#66543f;border-color:#d9c9ad}
+.game-center .controls-right .button.secondary:hover{background:#f0e3cc}
+.game-center .game-controls .ready-action{min-width:140px;min-height:50px;background:#bd4934;color:#fff;border:1px solid #a33e2c;box-shadow:0 4px 10px #914a2526;font-size:15px;font-weight:750}
+.game-center .game-controls .ready-action:hover{background:#a83c29}
+.game-center .game-controls .ready-action.is-ready{background:#f0ce7d;color:#49391f;border-color:#c8a453;box-shadow:0 3px 8px #a57d2920}
+.game-center .game-controls .ready-action.is-ready:hover{background:#e7bf66}
+.game-center .game-controls button:focus-visible{outline:3px solid #855b31;outline-offset:3px}
+@media(max-width:650px){.game-center .game-controls{padding:14px 12px;min-height:82px}.game-center .game-controls .ready-action{min-width:114px;min-height:48px;font-size:14px}.game-center .notice-bar{padding:9px 12px}}
+
+/* Winning a bell: all public piles gather and return to the winner's private deck. */
+.collection-layer{position:absolute;inset:0;pointer-events:none;z-index:15;overflow:visible;perspective:650px}
+.collection-packet{position:absolute;width:65px;height:99px;transform-style:preserve-3d;filter:drop-shadow(0 9px 9px #001d1866)}
+.collection-card,.collection-stack-sheets{position:absolute;inset:0;border:1px solid #e6e2d8;border-radius:7px;background:#fffefa;backface-visibility:hidden}
+.collection-stack-sheets{box-shadow:var(--pile-shadow);transform:translateZ(-1px)}
+.collection-back{transform:rotateY(180deg);background-color:#e6b7d2;background-image:repeating-linear-gradient(40deg,transparent 0 7px,#a7548830 7px 8px,transparent 8px 16px)}
+.collection-ring{position:absolute;left:50%;top:50%;width:165px;height:165px;border:3px solid #ffe7a2;border-radius:50%;box-shadow:0 0 26px #f4d66a5c}
+.collection-banner{position:absolute;top:10%;left:50%;padding:10px 18px;border-radius:13px;background:#fff4cf;color:#423723;border:1px solid #ffe8a4;box-shadow:0 6px 18px #00291d55;white-space:nowrap;font-size:14px;font-weight:650;transform:translateX(-50%)}
+.collection-banner strong{margin-left:8px;color:#855a12}
+.game-center .collection-winner .hidden-deck{outline:3px solid #ffe390;outline-offset:5px;filter:brightness(1.12)}
+@media(max-width:1150px){.collection-packet{width:57px;height:88px}}
+@media(max-width:650px){.collection-packet{width:34px;height:52px}.collection-card,.collection-stack-sheets{border-radius:4px}.collection-ring{width:92px;height:92px;border-width:2px}.collection-banner{top:-12%;padding:7px 12px;font-size:11px}}
+@media(prefers-reduced-motion:reduce){.collection-layer{display:none}}

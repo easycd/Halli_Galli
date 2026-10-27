@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 580" fill="none">
+<title>할리갈리 과일 카드와 종</title>
+
+  <defs>
+    <linearGradient id="red" x2=".7" y2="1"><stop stop-color="#ff786f"/><stop offset="1" stop-color="#de4149"/></linearGradient>
+    <linearGradient id="yellow" x2=".8" y2="1"><stop stop-color="#ffe477"/><stop offset="1" stop-color="#edaf30"/></linearGradient>
+    <linearGradient id="green" x2=".8" y2="1"><stop stop-color="#b7d967"/><stop offset="1" stop-color="#73a746"/></linearGradient>
+    <linearGradient id="purple" x2=".8" y2="1"><stop stop-color="#b68ad6"/><stop offset="1" stop-color="#79519b"/></linearGradient>
+  </defs>
+  <symbol id="strawberry" viewBox="0 0 100 100">
+    <path d="M21 31C7 48 35 88 49 91C63 92 91 49 78 32C66 17 34 17 21 31Z" fill="url(#red)"/>
+    <path d="M49 26Q35 7 20 19L36 31L17 32Q34 45 48 33Q61 43 80 30L61 27L75 14Q59 11 50 25" fill="#478455"/>
+    <path d="M49 25Q45 10 54 5" stroke="#517449" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <g fill="#ffe8a0"><ellipse cx="28" cy="45" rx="2" ry="3" transform="rotate(-20 28 45)"/><ellipse cx="46" cy="45" rx="2" ry="3"/><ellipse cx="66" cy="44" rx="2" ry="3"/><ellipse cx="36" cy="60" rx="2" ry="3"/><ellipse cx="57" cy="60" rx="2" ry="3"/><ellipse cx="48" cy="76" rx="2" ry="3"/></g>
+    <path d="M25 39Q18 49 34 68" fill="none" stroke="#ffa69a" stroke-width="4" stroke-linecap="round" opacity=".6"/>
+  </symbol>
+  <symbol id="banana" viewBox="0 0 100 100">
+    <path d="M73 10L83 15C91 53 64 93 24 85C15 82 10 77 12 71C45 80 73 44 73 10Z" fill="url(#yellow)"/>
+    <path d="M78 18Q89 64 28 82" stroke="#cc8a29" stroke-width="3" fill="none" opacity=".5"/>
+    <path d="M70 9L76 4L84 11L83 20L74 17Z" fill="#79704a"/>
+    <path d="M12 71L17 77L14 82L8 77Z" fill="#8b6a3f"/>
+    <path d="M27 73Q61 68 72 38" fill="none" stroke="#fff2af" stroke-width="4" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="lime" viewBox="0 0 100 100">
+    <ellipse cx="50" cy="54" rx="37" ry="34" transform="rotate(-28 50 54)" fill="url(#green)"/>
+    <path d="M49 23Q51 2 76 9Q72 29 49 23Z" fill="#4d8652"/>
+    <path d="M51 23Q61 13 71 12" fill="none" stroke="#8fae65" stroke-width="2"/>
+    <path d="M23 46Q28 31 42 30" stroke="#dceb91" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <g fill="#5f903c" opacity=".3"><circle cx="55" cy="68" r="2"/><circle cx="67" cy="58" r="2"/><circle cx="45" cy="77" r="2"/><circle cx="72" cy="45" r="2"/><circle cx="63" cy="76" r="2"/></g>
+  </symbol>
+  <symbol id="plum" viewBox="0 0 100 100">
+    <path d="M49 29C10 11 3 66 27 86C39 96 51 91 57 89C94 94 102 32 72 25C62 22 55 26 49 29Z" fill="url(#purple)"/>
+    <path d="M50 30Q59 57 51 86" stroke="#6d488d" stroke-width="2" fill="none" opacity=".45"/>
+    <path d="M50 30Q47 14 56 7" stroke="#7d6242" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M54 21Q63 3 82 12Q75 29 54 21" fill="#679357"/>
+    <path d="M26 39Q17 51 24 66" fill="none" stroke="#d4b2e7" stroke-width="5" stroke-linecap="round" opacity=".65"/>
+  </symbol>
+
+<defs>
+ <radialGradient id="halo"><stop stop-color="#fff7dc" stop-opacity=".9"/><stop offset="1" stop-color="#fff7dc" stop-opacity="0"/></radialGradient>
+ <linearGradient id="paper" x2=".7" y2="1"><stop stop-color="#fffef8"/><stop offset="1" stop-color="#fff9e9"/></linearGradient>
+ <linearGradient id="gold" x2=".8" y2="1"><stop stop-color="#f7e2a0"/><stop offset=".48" stop-color="#ddba68"/><stop offset="1" stop-color="#bc8b38"/></linearGradient>
+ <filter id="card-shadow" x="-50%" y="-30%" width="200%" height="200%"><feDropShadow dx="0" dy="15" stdDeviation="12" flood-color="#97733d" flood-opacity=".18"/></filter>
+ <filter id="bell-shadow" x="-50%" y="-50%" width="200%" height="220%"><feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#89652e" flood-opacity=".22"/></filter>
+</defs>
+<ellipse cx="307" cy="304" rx="305" ry="265" fill="url(#halo)"/>
+<ellipse cx="310" cy="466" rx="210" ry="25" fill="#a78a51" opacity=".08"/>
+<ellipse cx="316" cy="320" rx="242" ry="194" stroke="#fff9e8" stroke-opacity=".65" stroke-width="2" stroke-dasharray="4 10"/>
+<g transform="translate(83 155) rotate(-19 83 120)" filter="url(#card-shadow)">
+ <rect y="8" width="166" height="236" rx="22" fill="#e5d5b6"/>
+ <rect width="166" height="236" rx="22" fill="url(#paper)" stroke="#fffef7" stroke-width="5"/>
+ <rect x="12" y="12" width="142" height="212" rx="14" stroke="#eddfc6"/>
+ <use href="#strawberry" x="23" y="55" width="120" height="120"/>
+ <use href="#strawberry" x="12" y="14" width="25" height="25"/>
+ <use href="#strawberry" x="128" y="196" width="25" height="25"/>
+</g>
+<g transform="translate(240 88) rotate(4 83 120)" filter="url(#card-shadow)">
+ <rect y="8" width="166" height="236" rx="22" fill="#e5d5b6"/>
+ <rect width="166" height="236" rx="22" fill="url(#paper)" stroke="#fffef7" stroke-width="5"/>
+ <rect x="12" y="12" width="142" height="212" rx="14" stroke="#eddfc6"/>
+ <use href="#banana" x="43" y="25" width="80" height="80"/>
+ <use href="#banana" x="17" y="117" width="72" height="72"/>
+ <use href="#banana" x="80" y="117" width="72" height="72"/>
+</g>
+<g transform="translate(385 174) rotate(20 83 120)" filter="url(#card-shadow)">
+ <rect y="8" width="166" height="236" rx="22" fill="#e5d5b6"/>
+ <rect width="166" height="236" rx="22" fill="url(#paper)" stroke="#fffef7" stroke-width="5"/>
+ <rect x="12" y="12" width="142" height="212" rx="14" stroke="#eddfc6"/>
+ <use href="#lime" x="20" y="27" width="85" height="85"/>
+ <use href="#lime" x="61" y="120" width="85" height="85"/>
+</g>
+<g transform="translate(224 335)" filter="url(#bell-shadow)">
+ <ellipse cx="90" cy="120" rx="92" ry="15" fill="#967448"/>
+ <rect x="0" y="106" width="180" height="15" rx="7.5" fill="#b89761"/>
+ <path d="M16 105a74 74 0 0 1 148 0Z" fill="url(#gold)"/>
+ <path d="M30 88Q37 56 67 49" stroke="#ffedb9" stroke-width="7" stroke-linecap="round" opacity=".85"/>
+ <path d="M91 31V14" stroke="#bc964b" stroke-width="9"/>
+ <ellipse cx="91" cy="12" rx="23" ry="8" fill="#e6cc8a"/>
+ <ellipse cx="91" cy="10" rx="19" ry="5" fill="#f4dfa8"/>
+ <path d="M11 105H169" stroke="#f8df9a" stroke-width="4"/>
+</g>
+<use href="#plum" x="89" y="402" width="69" height="69" transform="rotate(-15 124 436)"/>
+<use href="#strawberry" x="486" y="96" width="55" height="55" transform="rotate(21 513 123)"/>
+<g stroke="#b79659" stroke-width="2" stroke-linecap="round" opacity=".7">
+ <path d="M125 95v16m-8-8h16M511 426v16m-8-8h16M420 65v12m-6-6h12"/>
+ <path d="m76 329 5 9 9 5-9 5-5 9-5-9-9-5 9-5Z" fill="#fff6d9"/>
+ <path d="m543 294 4 8 8 4-8 4-4 8-4-8-8-4 8-4Z" fill="#fff6d9"/>
+</g>
+<g fill="#c4a16a" opacity=".4"><circle cx="193" cy="71" r="3"/><circle cx="554" cy="384" r="3"/><circle cx="202" cy="479" r="3"/></g>
+</svg>
