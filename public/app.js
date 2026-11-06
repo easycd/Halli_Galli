@@ -1,10 +1,10 @@
-import { seatGeometry, flipKeyframes, detectCollection, collectionKeyframes, NAME_COLORS } from '/table-layout.js';
+import { seatGeometry, flipKeyframes, detectCollection, collectionKeyframes, NAME_COLORS } from './table-layout.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const app = $('#app');
 const fruitNames = { strawberry: '딸기', banana: '바나나', lime: '라임', plum: '자두' };
 const fruits = Object.keys(fruitNames);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const fruit = (name, cls = '') => `<svg class="${cls}" aria-hidden="true" viewBox="0 0 100 100"><use href="/fruit.svg#${name}"></use></svg>`;
+const fruit = (name, cls = '') => `<svg class="${cls}" aria-hidden="true" viewBox="0 0 100 100"><use href="./fruit.svg#${name}"></use></svg>`;
 const paths = {
   bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-4-5"/>',
@@ -23,7 +23,7 @@ const paths = {
   spark: '<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',
 };
 function icon(name) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.spark}</svg>`; }
-const bellArt = () => '<img src="/silver-bell.svg" alt="" draggable="false">';
+const bellArt = () => '<img src="./silver-bell.svg" alt="" draggable="false">';
 let state = null, stream, authMode = 'login', busy = false, connected = true, offset = 0;
 let paused = localStorage.getItem('hg-paused') === 'yes';
 let sound = localStorage.getItem('hg-sound') === 'yes';
@@ -44,7 +44,7 @@ function toast(message) {
   toastTimer = setTimeout(() => $('#toast').classList.remove('visible'), 3500);
 }
 async function api(path, data) {
-  const response = await fetch(`/api/${path}`, data === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const response = await fetch(`./api/${path}`, data === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   const result = await response.json();
   if (!response.ok) {
     if (response.status === 401 && state) { stream?.close(); state = null; render(); }
@@ -78,7 +78,7 @@ function accept(next) {
   render();
 }
 function connect() {
-  stream?.close(); stream = new EventSource('/api/events');
+  stream?.close(); stream = new EventSource('./api/events');
   stream.onmessage = event => { connected = true; accept(JSON.parse(event.data)); };
   stream.onopen = () => { connected = true; updateConnection(); };
   stream.onerror = () => { connected = false; updateConnection(); };
@@ -100,13 +100,13 @@ function chime() {
     });
   } catch { /* Audio is optional. */ }
 }
-function brand() { return `<a class="brand" href="/" aria-label="할리갈리 홈"><span class="brand-mark">${icon('bell')}</span><span class="brand-name">halli<span>galli.</span></span></a>`; }
+function brand() { return `<a class="brand" href="./" aria-label="할리갈리 홈"><span class="brand-mark">${icon('bell')}</span><span class="brand-name">halli<span>galli.</span></span></a>`; }
 function header(auth = false) {
   return `<header class="topbar">${brand()}<nav class="top-actions" aria-label="설정"><button class="text-button" data-do="rules" aria-label="게임 방법">${icon('help')}<span>게임 방법</span></button><button class="text-button" data-do="motion" aria-label="배경 애니메이션 ${paused ? '재생' : '일시정지'}">${icon(paused ? 'play' : 'pause')}<span>${paused ? '배경 재생' : '배경 멈추기'}</span></button>${auth ? '' : `<button class="text-button" data-do="sound" aria-label="소리 ${sound ? '끄기' : '켜기'}" aria-pressed="${sound}"><span>소리 ${sound ? '켜짐' : '꺼짐'}</span>${icon('bell')}</button><div class="profile"><span class="avatar c1">${escape(state.me.nickname[0])}</span><strong>${escape(state.me.nickname)}</strong><button class="text-button" data-do="logout" aria-label="로그아웃">${icon('logout')}</button></div>`}</nav></header>`;
 }
 function footer(auth = false) { if (auth) return ''; return `<footer class="page-foot"><span class="runtime-badge">${state.debug ? 'DEBUG · 기록 미반영' : 'ONLINE'}</span><span class="connection"><i class="dot"></i>서버 연결됨</span></footer>`; }
 function authPage() {
-  return `<div class="auth-header">${header(true)}</div><main id="main" class="auth-layout"><section class="auth-visual" aria-label="할리갈리 과일 카드와 종 일러스트"><h1 class="sr-only">할리갈리 로그인</h1><img src="/login-art.svg" width="620" height="580" alt="딸기, 바나나, 라임 카드와 황금색 종으로 꾸민 할리갈리 테이블"></section><section class="glass auth-panel" aria-labelledby="auth-title"><h2 id="auth-title" class="sr-only">${authMode === 'login' ? '로그인' : '회원가입'}</h2><div class="auth-tabs" role="group" aria-label="로그인 또는 회원가입"><button class="auth-tab ${authMode === 'login' ? 'active' : ''}" data-auth="login" aria-pressed="${authMode === 'login'}">로그인</button><button class="auth-tab ${authMode === 'register' ? 'active' : ''}" data-auth="register" aria-pressed="${authMode === 'register'}">회원가입</button></div><form id="auth-form"><label for="nickname">닉네임<input id="nickname" name="nickname" required minlength="2" maxlength="12" autocomplete="username" placeholder="닉네임 입력" aria-describedby="nickname-hint"><small id="nickname-hint">한글·영문·숫자·밑줄·하이픈, 2~12자</small></label><label for="password">비밀번호<div class="password-wrap"><input id="password" name="password" type="password" required minlength="8" maxlength="128" autocomplete="${authMode === 'login' ? 'current-password' : 'new-password'}" placeholder="8자 이상 입력해주세요"><button type="button" class="password-toggle" data-do="password" aria-label="비밀번호 보기" aria-pressed="false">${icon('eye')}</button></div></label><p class="form-error" role="alert" id="auth-error"></p><button type="submit" class="button primary wide">${authMode === 'login' ? '로그인' : '회원가입'} ${icon('arrow')}</button></form></section></main><div class="app-shell">${footer(true)}</div>`;
+  return `<div class="auth-header">${header(true)}</div><main id="main" class="auth-layout"><section class="auth-visual" aria-label="할리갈리 과일 카드와 종 일러스트"><h1 class="sr-only">할리갈리 로그인</h1><img src="./login-art.svg" width="620" height="580" alt="딸기, 바나나, 라임 카드와 황금색 종으로 꾸민 할리갈리 테이블"></section><section class="glass auth-panel" aria-labelledby="auth-title"><h2 id="auth-title" class="sr-only">${authMode === 'login' ? '로그인' : '회원가입'}</h2><div class="auth-tabs" role="group" aria-label="로그인 또는 회원가입"><button class="auth-tab ${authMode === 'login' ? 'active' : ''}" data-auth="login" aria-pressed="${authMode === 'login'}">로그인</button><button class="auth-tab ${authMode === 'register' ? 'active' : ''}" data-auth="register" aria-pressed="${authMode === 'register'}">회원가입</button></div><form id="auth-form"><label for="nickname">닉네임<input id="nickname" name="nickname" required minlength="2" maxlength="12" autocomplete="username" placeholder="닉네임 입력" aria-describedby="nickname-hint"><small id="nickname-hint">한글·영문·숫자·밑줄·하이픈, 2~12자</small></label><label for="password">비밀번호<div class="password-wrap"><input id="password" name="password" type="password" required minlength="8" maxlength="128" autocomplete="${authMode === 'login' ? 'current-password' : 'new-password'}" placeholder="8자 이상 입력해주세요"><button type="button" class="password-toggle" data-do="password" aria-label="비밀번호 보기" aria-pressed="false">${icon('eye')}</button></div></label><p class="form-error" role="alert" id="auth-error"></p><button type="submit" class="button primary wide">${authMode === 'login' ? '로그인' : '회원가입'} ${icon('arrow')}</button></form></section></main><div class="app-shell">${footer(true)}</div>`;
 }
 function avatar(name, index = 0) { return `<span class="avatar c${index % 4}">${escape(name[0])}</span>`; }
 function leaderboard() {

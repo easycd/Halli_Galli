@@ -6,7 +6,10 @@ import { randomBytes, randomUUID, randomInt } from 'node:crypto';
 import { Accounts } from './auth.js';
 import { Game } from './game.js';
 
-export async function createApp({ dataDir = fileURLToPath(new URL('../.data/', import.meta.url)), debug = true } = {}) {
+/** 게임을 올릴 주소 경로. 예: BASE_PATH=/haligali → https://도메인/haligali/ . 없으면 맨 앞(/) */
+export const basePath = (value = process.env.BASE_PATH ?? '/') => `/${String(value).replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
+
+export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLToPath(new URL('../.data/', import.meta.url)), debug = true, base = basePath(), trustProxy = process.env.TRUST_PROXY === 'true' } = {}) {
   const accounts = new Accounts(dataDir); await accounts.load();
   const sessions = new Map(), streams = new Map(), rooms = new Map(), chats = [], limits = new Map();
   const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
@@ -81,6 +84,16 @@ export async function createApp({ dataDir = fileURLToPath(new URL('../.data/', i
     const json = (status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
     try {
       const url = new URL(req.url, 'http://localhost');
+      // 경로 앞의 BASE_PATH 를 떼고 나머지는 그대로 처리 (예: /haligali/api/state → /api/state)
+      if (base !== '/') {
+        if (url.pathname === base.slice(0, -1)) { res.writeHead(301, { Location: base + url.search }); return res.end(); }
+        if (!url.pathname.startsWith(base)) { res.writeHead(404); return res.end('Not found'); }
+        url.pathname = url.pathname.slice(base.length - 1);
+      }
+      // Cloudflare 터널 같은 프록시 뒤에서는 실제 접속 주소·https 여부를 머리글에서 읽음
+      const clientIp = (trustProxy && (req.headers['cf-connecting-ip'] || String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim())) || req.socket.remoteAddress;
+      const secure = req.socket.encrypted || (trustProxy && req.headers['x-forwarded-proto'] === 'https');
+      const cookieAttrs = `HttpOnly; SameSite=Strict; Path=${base}`;
       const token = /(?:^|; )hg_session=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
       const session = sessions.get(token);
       const user = session && session.expires > Date.now() ? accounts.users.find(u => u.id === session.id) : null;
@@ -89,13 +102,13 @@ export async function createApp({ dataDir = fileURLToPath(new URL('../.data/', i
         if (!req.headers['content-type']?.startsWith('application/json')) return json(415, { error: 'JSON 요청만 허용해요.' });
       }
       if (req.method === 'POST' && ['/api/register', '/api/login'].includes(url.pathname)) {
-        rate(`auth:${req.socket.remoteAddress}`, 30, 60000);
+        rate(`auth:${clientIp}`, 30, 60000);
         const data = await body(req);
         const account = url.pathname.endsWith('register') ? await accounts.register(data.nickname?.trim(), data.password) : await accounts.login(data.nickname?.trim(), data.password);
         if (token) sessions.delete(token);
         const sid = randomBytes(32).toString('hex');
         sessions.set(sid, { id: account.id, expires: Date.now() + 86400000 });
-        res.setHeader('Set-Cookie', `hg_session=${sid}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${req.socket.encrypted ? '; Secure' : ''}`);
+        res.setHeader('Set-Cookie', `hg_session=${sid}; ${cookieAttrs}; Max-Age=86400${secure ? '; Secure' : ''}`);
         return json(200, snapshot(account));
       }
       if (url.pathname.startsWith('/api/')) {
@@ -124,7 +137,7 @@ export async function createApp({ dataDir = fileURLToPath(new URL('../.data/', i
             leave(user); sessions.delete(token);
             for (const response of streams.get(user.id) ?? []) response.end();
             streams.delete(user.id);
-            res.setHeader('Set-Cookie', 'hg_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+            res.setHeader('Set-Cookie', `hg_session=; ${cookieAttrs}; Max-Age=0`);
             broadcast(); return json(200, { ok: true });
           case '/api/rooms': {
             if (room) throw new Error('현재 방을 나간 후 새 방을 만들어주세요.');
@@ -224,5 +237,5 @@ export async function createApp({ dataDir = fileURLToPath(new URL('../.data/', i
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const app = await createApp({ debug: process.env.DEBUG_MODE !== 'false' });
   const port = Number(process.env.PORT ?? 3000), host = process.env.HOST ?? '127.0.0.1';
-  app.server.listen(port, host, () => console.log(`Halli Galli ready at http://${host}:${port} (DEBUG=${process.env.DEBUG_MODE !== 'false'})`));
+  app.server.listen(port, host, () => console.log(`Halli Galli ready at http://${host}:${port}${basePath()} (DEBUG=${process.env.DEBUG_MODE !== 'false'})`));
 }
