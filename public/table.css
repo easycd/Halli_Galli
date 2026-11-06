@@ -186,3 +186,8 @@
 .win-banner{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);font-size:clamp(44px,9vw,96px);font-weight:850;letter-spacing:.04em;color:#ffe390;text-shadow:0 3px 0 #b8432f,0 8px 24px #0009;animation:win-pop 3.6s cubic-bezier(.2,.9,.3,1.2) both}
 @keyframes win-pop{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.08)}20%{transform:translate(-50%,-50%) scale(1)}82%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}
 @media(prefers-reduced-motion:reduce){.win-banner{animation:none;opacity:1}}
+
+/* room chat: each line in the writer's seat colour (the same colour as their name tag) */
+.chat-msg.colored{background:color-mix(in srgb,var(--name-bg) 42%,transparent);border-left:4px solid var(--name-bg);border-radius:10px;padding:7px 10px;margin:0 0 6px}
+.chat-msg.colored .chat-meta strong{background:var(--name-bg);color:#283b31;border-radius:6px;padding:1px 7px}
+.chat-msg.colored p{color:#3b3226}

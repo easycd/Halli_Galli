@@ -47,6 +47,9 @@ test('homepage login, real room/chat APIs, internal admin API and access boundar
   assert.equal((await request('/api/bot', {}, a.cookie)).status, 400);
   const chat = await request('/api/chat', { channel: 'room', text: '<script>alert(1)</script>' }, a.cookie);
   assert.equal(chat.body.room.messages[0].text, '<script>alert(1)</script>'); assert.equal(chat.body.messages.length, 0);
+  // room chat lines carry the writer's seat colour; the state carries which screen files the server hands out
+  assert.equal(chat.body.room.messages[0].color, chat.body.room.players.find(p => p.id === a.id).color);
+  assert.match(state.body.build, /^[0-9a-f]{12}$/);
   const b = home.signIn('다른친구');
   assert.equal((await request('/api/join', { roomId: room.body.room.id }, b.cookie)).status, 400);
   assert.equal((await request('/api/state', undefined, b.cookie)).body.room, null);

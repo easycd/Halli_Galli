@@ -68,6 +68,8 @@ async function api(path, data) {
   return result;
 }
 function accept(next) {
+  // the server now hands out newer screen files than this page was loaded with: load them (the game itself lives on the server)
+  if (state?.build && next.build && state.build !== next.build) { stream?.close(); location.reload(); return; }
   const previousGame = state?.room?.game, nextGame = next.room?.game;
   if (previousGame?.id !== nextGame?.id) {
     activeFlips.clear(); activeCollection = null; clearTimeout(collectionTimer); seenCollections.clear();
@@ -221,7 +223,7 @@ function leaderboard() {
 }
 function chatPanel(channel) {
   const messages = channel === 'global' ? state.messages : state.room.messages;
-  return `<section class="glass panel chat-panel" aria-label="${channel === 'global' ? '전체' : '룸'} 채팅"><div class="panel-header section-heading"><div class="section-title">${icon('chat')}<h3>${channel === 'global' ? '전체 채팅' : '룸 채팅'}</h3></div><span class="count">${channel === 'global' ? state.online.length : state.room.players.length}</span></div><div class="chat-body" data-chat="${channel}" role="log" aria-label="채팅 메시지">${messages.length ? messages.map(m => `<div class="chat-msg ${m.system ? 'system' : ''}"><div class="chat-meta"><strong>${escape(m.nickname)}</strong><time>${new Date(m.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></div><p>${escape(m.text)}</p></div>`).join('') : `<div class="chat-empty">${icon('chat')}<span>메시지 없음</span></div>`}</div><form class="chat-form" data-channel="${channel}"><label class="sr-only" for="chat-${channel}">메시지</label><input id="chat-${channel}" name="message" autocomplete="off" maxlength="200" placeholder="메시지를 입력하세요" value="${escape(drafts[channel])}" required><button type="submit" aria-label="메시지 보내기">${icon('send')}</button></form></section>`;
+  return `<section class="glass panel chat-panel" aria-label="${channel === 'global' ? '전체' : '룸'} 채팅"><div class="panel-header section-heading"><div class="section-title">${icon('chat')}<h3>${channel === 'global' ? '전체 채팅' : '룸 채팅'}</h3></div><span class="count">${channel === 'global' ? state.online.length : state.room.players.length}</span></div><div class="chat-body" data-chat="${channel}" role="log" aria-label="채팅 메시지">${messages.length ? messages.map(m => `<div class="chat-msg ${m.system ? 'system' : ''}${Number.isInteger(m.color) ? ' colored' : ''}"${Number.isInteger(m.color) ? ` style="--name-bg:${NAME_COLORS[m.color % NAME_COLORS.length]}"` : ''}><div class="chat-meta"><strong>${escape(m.nickname)}</strong><time>${new Date(m.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></div><p>${escape(m.text)}</p></div>`).join('') : `<div class="chat-empty">${icon('chat')}<span>메시지 없음</span></div>`}</div><form class="chat-form" data-channel="${channel}"><label class="sr-only" for="chat-${channel}">메시지</label><input id="chat-${channel}" name="message" autocomplete="off" maxlength="200" placeholder="메시지를 입력하세요" value="${escape(drafts[channel])}" required><button type="submit" aria-label="메시지 보내기">${icon('send')}</button></form></section>`;
 }
 function presencePanel(room = false) {
   const players = room ? state.room.players : state.online;
