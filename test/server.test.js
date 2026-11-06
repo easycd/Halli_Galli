@@ -132,6 +132,30 @@ test('8 independent sessions receive the same start, starter and 80-card public 
   const states = await Promise.all(readers.map(readStart));
   const game = states[0].room.game;
   assert.ok(states.every(s => s.online.length === 8 && s.room.game.id === game.id && s.room.game.starter === game.starter && s.room.game.startsAt === game.startsAt));
-  assert.ok(states.every(s => s.room.game.players.every(p => p.cards === 10 && !('deck' in p))));
+  // each player sees only their own card count; the others' stay hidden until the game ends
+  assert.ok(states.every(s => s.room.game.players.every(p => !('deck' in p) && (p.id === s.me.id ? p.cards === 10 : p.cards === null))));
   assert.equal(game.startsAt - game.announceAt, 1500);
+});
+
+test('everyone at a table gets their own colour, picked at random', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'halli-galli-color-'));
+  const home = fakeHome();
+  const app = await createApp({ dataDir: directory, verifySession: home.verifySession });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const post = async (path, data, cookie) => (await fetch(`${base}/api/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(data) })).json();
+  const seen = new Set();
+  for (let round = 0; round < 6; round++) {
+    const host = home.signIn(`색${round}`);
+    await post('rooms', { name: '색', max: 8, mode: 'custom', cards: 5, ending: 'last' }, host.cookie);
+    let state;
+    for (let i = 0; i < 7; i++) state = await post('bot', {}, host.cookie);
+    const colors = state.room.players.map(p => p.color);
+    assert.equal(new Set(colors).size, 8, 'eight players, eight different colours');
+    assert.ok(colors.every(c => Number.isInteger(c) && c >= 0 && c < 8));
+    seen.add(colors.join());
+    await post('leave', {}, host.cookie);
+  }
+  assert.ok(seen.size > 1, 'the order is random');
 });

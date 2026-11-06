@@ -35,6 +35,7 @@
     <ol class="rules"><li><strong>내 차례에 한 장씩.</strong><p>카드를 뒤집고, 각 플레이어의 맨 위 카드만 확인해요.</p></li><li><strong>같은 과일이 정확히 5개!</strong><p>내 차례가 아니어도 가운데 종을 누르세요. 공개된 모든 카드 더미를 가져와요.</p></li><li><strong>앗, 잘못 눌렀다면?</strong><p>다른 참가자에게 비공개 카드를 한 장씩 줘야 해요.</p></li><li><strong>마지막 한 장에도 기회가 있어요.</strong><p>카드가 0장이 되어도 다음 정답 종을 누르면 복귀해요. 다른 사람이 획득하면 탈락해요.</p></li></ol>
     <p class="note">종: Space · 카드 뒤집기: Enter<br>채팅 입력 중에는 게임 단축키가 작동하지 않아요.</p>
   </dialog>
-  <dialog id="leave-dialog" aria-labelledby="leave-title"><h2 id="leave-title">테이블을 나갈까요?</h2><p>진행 중인 경기는 취소되고 기록은 남지 않아요.</p><div class="form-row"><button class="button secondary" data-close>계속 플레이</button><button class="button danger" id="confirm-leave">나가기</button></div></dialog>
+  <dialog id="leave-dialog" aria-labelledby="leave-title"><h2 id="leave-title">테이블을 나갈까요?</h2><p>나가면 내 카드와 차례는 없어지고, 남은 사람끼리 계속해요.</p><div class="form-row"><button class="button secondary" data-close>계속 플레이</button><button class="button danger" id="confirm-leave">나가기</button></div></dialog>
+  <dialog id="left-dialog" aria-labelledby="left-title"><h2 id="left-title">상대가 게임에서 나갔어요</h2><p id="left-body"></p><div class="form-row"><button class="button primary" data-close autofocus>확인</button></div></dialog>
 </body>
 </html>

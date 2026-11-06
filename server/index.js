@@ -17,30 +17,40 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
   const roomFor = id => [...rooms.values()].find(r => r.players.some(p => p.id === id));
   const online = id => (streams.get(id)?.size ?? 0) > 0;
   const identity = user => ({ id: user.id, nickname: user.nickname });
-  const roomView = room => ({
+  const roomView = (room, viewerId) => ({
     id: room.id, name: room.name, host: room.host, settings: room.settings,
     players: room.players.map(p => ({ ...p, online: p.bot || online(p.id) })), messages: room.messages,
-    game: room.game?.snapshot() ?? null,
+    game: room.game?.snapshot(viewerId) ?? null,
   });
   const snapshot = user => ({
     me: accounts.public(user), debug, serverTime: Date.now(),
     ranking: accounts.users.filter(u => u.played).map(u => accounts.public(u)).sort((a, b) => b.wins - a.wins || b.wins / b.played - a.wins / a.played || b.played - a.played),
     online: accounts.users.filter(u => online(u.id)).map(u => ({ ...identity(u), status: ['spinning', 'announcing', 'playing'].includes(roomFor(u.id)?.game?.phase) ? '게임중' : '대기중' })),
     rooms: [...rooms.values()].map(r => ({ id: r.id, name: r.name, count: r.players.length, settings: r.settings, phase: r.game?.phase ?? 'waiting' })),
-    messages: chats, room: roomFor(user.id) ? roomView(roomFor(user.id)) : null,
+    messages: chats, room: roomFor(user.id) ? roomView(roomFor(user.id), user.id) : null,
   });
   function broadcast() {
     for (const [id, responses] of streams) {
       const user = accounts.find(id);
       if (!user) continue;
       const data = `data: ${JSON.stringify(snapshot(user))}\n\n`;
-      for (const res of responses) res.write(data);
+      for (const res of responses) {
+        // a connection that stopped reading would keep every update in memory: close it (the page reconnects by itself)
+        if (res.writableLength > 1024 * 1024) { res.destroy(); continue; }
+        res.write(data);
+      }
     }
   }
   function rate(key, max, ms) {
     const now = Date.now(); let entry = limits.get(key);
     if (!entry || now > entry.until) { entry = { count: 0, until: now + ms }; limits.set(key, entry); }
     if (++entry.count > max) throw new Error('입력이 너무 빨라요. 잠시 후 다시 시도해주세요.');
+  }
+  // Everyone at a table gets their own colour (8 colours for up to 8 players), picked at random from the free ones.
+  function pickColor(room) {
+    const used = new Set(room.players.map(p => p.color));
+    const free = Array.from({ length: 8 }, (_, i) => i).filter(i => !used.has(i));
+    return free.length ? free[randomInt(free.length)] : randomInt(8);
   }
   function maybeStart(room) {
     if (room.game && room.game.phase !== 'finished') return;
@@ -51,12 +61,16 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
   }
   function leave(user) {
     const room = roomFor(user.id); if (!room) return;
-    if (room.game && room.game.phase !== 'finished') {
-      room.messages.push({ id: randomUUID(), nickname: '안내', text: `${user.nickname}님이 나가 경기를 취소했어요.`, at: Date.now(), system: true });
-    }
-    room.game = null;
     room.players = room.players.filter(p => p.id !== user.id);
-    room.players.forEach(p => p.ready = !!p.bot);
+    if (room.game && room.game.phase !== 'finished') {
+      // Mid-game: their cards and turn go away and the others play on; one player left → that player wins.
+      room.messages.push({ id: randomUUID(), nickname: '안내', text: `${user.nickname}님이 게임에서 나갔어요.`, at: Date.now(), system: true });
+      room.game.removePlayer(user.id);
+      record(room);
+    } else {
+      room.game = null;
+      room.players.forEach(p => p.ready = !!p.bot);
+    }
     if (!room.players.some(p => !p.bot)) rooms.delete(room.id);
     else if (room.host === user.id) room.host = room.players.find(p => !p.bot).id;
   }
@@ -171,7 +185,7 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
             const { name, max, mode, cards, ending } = data;
             if (typeof name !== 'string' || !name.trim() || name.trim().length > 24) throw new Error('방 이름은 1~24자로 입력해주세요.');
             if (!Number.isInteger(max) || max < 2 || max > 8 || !['original', 'custom'].includes(mode) || !['first', 'last'].includes(ending) || !Number.isInteger(cards) || cards < 5 || cards > 30) throw new Error('방 설정을 확인해주세요.');
-            room = { id: randomUUID(), name: name.trim(), host: user.id, settings: { max, mode, cards, ending }, players: [{ ...identity(user), ready: false, bot: false }], messages: [], game: null, disconnected: new Map() };
+            room = { id: randomUUID(), name: name.trim(), host: user.id, settings: { max, mode, cards, ending }, players: [{ ...identity(user), ready: false, bot: false, color: randomInt(8) }], messages: [], game: null, disconnected: new Map() };
             rooms.set(room.id, room); break;
           }
           case '/api/join':
@@ -179,7 +193,7 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
             room = rooms.get(data.roomId);
             if (!room || room.players.length >= room.settings.max || (room.game && room.game.phase !== 'finished')) throw new Error('지금 입장할 수 없는 방이에요.');
             room.game = null; room.players.forEach(p => p.ready = !!p.bot);
-            room.players.push({ ...identity(user), ready: false, bot: false }); break;
+            room.players.push({ ...identity(user), ready: false, bot: false, color: pickColor(room) }); break;
           case '/api/leave': leave(user); break;
           case '/api/ready':
             if (!room || (room.game && room.game.phase !== 'finished')) throw new Error('지금 준비 상태를 바꿀 수 없어요.');
@@ -194,7 +208,7 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
             room.game = null; room.players.forEach(p => p.ready = !!p.bot);
             const names = ['복숭아', '바나나', '라임', '자두', '체리', '망고', '멜론'];
             const name = names.find(n => !room.players.some(p => p.nickname === `${n} 봇`));
-            room.players.push({ id: randomUUID(), nickname: `${name} 봇`, bot: true, ready: true }); break;
+            room.players.push({ id: randomUUID(), nickname: `${name} 봇`, bot: true, ready: true, color: pickColor(room) }); break;
           }
           case '/api/action':
             if (!room?.game || data.gameId !== room.game.id) throw new Error('현재 경기를 찾을 수 없어요.');
@@ -229,7 +243,7 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
     for (const room of rooms.values()) {
       for (const [id, at] of room.disconnected) {
         if (online(id)) room.disconnected.delete(id);
-        else if (now - at >= 30000) { const u = accounts.find(id); if (u) leave(u); changed = true; }
+        else if (now - at >= 30000) { room.disconnected.delete(id); const u = accounts.find(id); if (u) leave(u); changed = true; }
       }
       const g = room.game; if (!g) continue;
       if (g.tick(now)) changed = true;

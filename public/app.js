@@ -33,6 +33,8 @@ const drafts = { global: '', room: '' };
 const activeFlips = new Map();
 let activeCollection = null, collectionTimer;
 const seenCollections = new Set();
+const seenDepartures = new Set();
+let activeRing = null, seenRing = null;   // the hand on the bell
 function background() {
   $('#background').innerHTML = Array.from({ length: 12 }, (_, i) => {
     const seed = crypto.getRandomValues(new Uint32Array(3));
@@ -62,7 +64,15 @@ async function api(path, data) {
 }
 function accept(next) {
   const previousGame = state?.room?.game, nextGame = next.room?.game;
-  if (previousGame?.id !== nextGame?.id) { activeFlips.clear(); activeCollection = null; clearTimeout(collectionTimer); seenCollections.clear(); }
+  if (previousGame?.id !== nextGame?.id) {
+    activeFlips.clear(); activeCollection = null; clearTimeout(collectionTimer); seenCollections.clear();
+    // departures from before this page saw the game (reload, reconnect) need no pop-up
+    seenDepartures.clear(); nextGame?.departures?.forEach(d => seenDepartures.add(`${nextGame.id}:${d.version}`));
+  }
+  // a new bell hit (not one from before this page saw the game): show that player's hand on the bell
+  const ring = nextGame?.lastRing;
+  if (ring && previousGame?.id === nextGame.id && !matchMedia('(prefers-reduced-motion: reduce)').matches && seenRing !== `${nextGame.id}:${ring.version}`) activeRing = { ...ring, startedAt: Date.now() };
+  if (ring) seenRing = `${nextGame.id}:${ring.version}`;
   const collection = detectCollection(previousGame, nextGame);
   if (collection && !seenCollections.has(collection.id) && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     seenCollections.add(collection.id);
@@ -73,10 +83,12 @@ function accept(next) {
     for (const player of nextGame.players) {
       const previous = previousGame.players.find(p => p.id === player.id);
       if (player.top && previous && player.top.id !== previous.top?.id && player.openCount === previous.openCount + 1) {
-        activeFlips.set(player.id, { card: player.top, startedAt: Date.now() });
+        // keep showing the old top card until the flying card lands, so the new card is never seen early
+        activeFlips.set(player.id, { card: player.top, before: previous.top, beforeCount: previous.openCount, startedAt: Date.now() });
       } else if (!player.top) activeFlips.delete(player.id);
     }
   }
+  const departed = (nextGame?.departures ?? []).filter(d => d.id !== next.me?.id && !seenDepartures.has(`${nextGame.id}:${d.version}`));
   state = next; offset = next.serverTime - Date.now();
   const game = state.room?.game;
   if (game?.notice && game.notice !== lastNotice && ['playing', 'finished'].includes(game.phase)) {
@@ -84,6 +96,17 @@ function accept(next) {
     lastNotice = game.notice;
   }
   render();
+  for (const d of departed) { seenDepartures.add(`${game.id}:${d.version}`); showDeparture(d, game); }
+}
+// Someone left mid-game: say so; when only one player is left, say who won.
+function showDeparture(d, game) {
+  const dialog = $('#left-dialog');
+  const winner = game.phase === 'finished' && !game.draw ? game.results.find(r => r.winner) : null;
+  $('#left-title').textContent = `${d.nickname}님이 게임에서 나갔어요`;
+  $('#left-body').textContent = game.phase === 'finished'
+    ? winner ? `함께할 사람이 없어 게임이 끝났어요. ${winner.nickname}님 우승!` : '함께할 사람이 없어 게임이 끝났어요.'
+    : '나간 사람의 카드와 차례는 없어졌어요. 남은 사람끼리 계속해요.';
+  if (!dialog.open) dialog.showModal();
 }
 function connect() {
   stream?.close(); stream = new EventSource('./api/events');
@@ -126,7 +149,7 @@ function authPage() {
       : { title: '로그인 확인 중…', body: '잠시만 기다려주세요.', button: '' };
   return `<div class="auth-header">${header(true)}</div><main id="main" class="auth-layout"><section class="auth-visual" aria-label="할리갈리 과일 카드와 종 일러스트"><h1 class="sr-only">할리갈리</h1><img src="./login-art.svg" width="620" height="580" alt="딸기, 바나나, 라임 카드와 황금색 종으로 꾸민 할리갈리 테이블"></section><section class="glass auth-panel" aria-labelledby="auth-title" aria-live="polite"><h2 id="auth-title">${text.title}</h2><p>${text.body}</p><div class="auth-actions">${text.button}</div></section></main><div class="app-shell">${footer(true)}</div>`;
 }
-function avatar(name, index = 0) { return `<span class="avatar c${index % 4}">${escape(name[0])}</span>`; }
+function avatar(name, index = 0, color) { return `<span class="avatar c${index % 4}"${Number.isInteger(color) ? ` style="background:${NAME_COLORS[color % NAME_COLORS.length]};color:#3a3126"` : ''}>${escape(name[0])}</span>`; }
 function leaderboard() {
   const ranking = state.ranking;
   return `<section class="leaderboard glass" aria-labelledby="ranking-title"><div class="section-heading"><div class="section-title">${icon('trophy')}<h3 id="ranking-title">전체 랭킹</h3></div></div>${ranking.length ? `<div class="leaders">${ranking.slice(0, 3).map((u, i) => `<div class="leader"><span class="place">${i + 1}</span>${avatar(u.nickname, i)}<div class="details"><strong>${escape(u.nickname)}</strong><small>승률 ${Math.round(u.wins / u.played * 100)}%</small></div><span class="score">${u.wins}승</span></div>`).join('')}<div class="leader my-rank"><div class="details"><strong>나의 기록</strong><small>${state.debug ? '디버그 경기는 집계하지 않아요' : `${state.me.wins}승 · ${state.me.played}판`}</small></div></div></div>` : `<div class="rank-empty">${icon('trophy')}<div><p>랭킹 기록 없음</p></div></div>`}</section>`;
@@ -141,7 +164,7 @@ function presencePanel(room = false) {
   return `<aside class="glass panel presence" aria-label="${room ? '입장 플레이어' : '현재 접속자'}"><div class="panel-header section-heading"><div class="section-title">${icon('people')}<h3>${room ? '플레이어' : '접속자'}</h3></div><span class="count">${players.length}${room ? `/${state.room.settings.max}` : ''}</span></div><div class="player-list">${players.map((p, i) => {
     const gp = game?.players.find(g => g.id === p.id);
     const label = room ? gp ? gp.status === 'out' ? '탈락' : gp.status === 'recovering' ? '복귀 대기' : '게임중' : p.ready ? '준비 완료' : '준비중' : p.status;
-    return `<div class="player-row">${avatar(p.nickname, i)}<div class="person"><strong>${escape(p.nickname)}${p.id === state.me.id ? ' <small>나</small>' : ''}</strong><small>${room ? `${i + 1}번 좌석${p.id === state.room.host ? ' · 방장' : ''}${p.bot ? ' · BOT' : p.online ? '' : ' · 연결 끊김'}` : ''}</small></div><span class="status ${label === '게임중' ? 'playing' : ''}">${escape(label)}</span></div>`;
+    return `<div class="player-row">${avatar(p.nickname, i, room ? p.color : undefined)}<div class="person"><strong>${escape(p.nickname)}${p.id === state.me.id ? ' <small>나</small>' : ''}</strong><small>${room ? `${i + 1}번 좌석${p.id === state.room.host ? ' · 방장' : ''}${p.bot ? ' · BOT' : p.online ? '' : ' · 연결 끊김'}` : ''}</small></div><span class="status ${label === '게임중' ? 'playing' : ''}">${escape(label)}</span></div>`;
   }).join('')}</div>${room ? `${state.debug ? `<div class="debug-note">${state.room.host === state.me.id ? `<button class="button secondary" data-do="bot" ${players.length >= state.room.settings.max || (game && game.phase !== 'finished') ? 'disabled' : ''}>${icon('plus')} 테스트 봇 추가</button>` : ''}</div>` : ''}` : ``}</aside>`;
 }
 const endingLabel = ending => ending === 'first' ? '첫 탈락 시 종료' : '마지막 1명까지';
@@ -166,17 +189,79 @@ function cardFace(card) {
   const placements = { 1: [[50,50]], 2: [[27,24],[73,76]], 3: [[25,20],[50,50],[75,80]], 4: [[25,23],[75,23],[25,77],[75,77]], 5: [[25,20],[75,20],[50,50],[25,80],[75,80]] };
   return `<div class="card-fruits n${card.count}">${placements[card.count].map(([x,y]) => `<span style="--fruit-x:${x}%;--fruit-y:${y}%">${fruit(card.fruit)}</span>`).join('')}</div>`;
 }
+// Seats are turned so that my seat is always at 6 o'clock; the order stays clockwise.
+function seatIndex(players) {
+  const mine = Math.max(0, players.findIndex(p => p.id === state.me.id));
+  return i => (i - mine + players.length) % players.length;
+}
+const OTHER_DECK = 18;   // others' decks are drawn at one fixed height so their size gives nothing away
+function pileMarkup(p, top = p.top, openCount = p.openCount ?? 0) {
+  return `<div class="playing-card ${top ? 'card-front card-stack' : 'empty-pile'}" style="${stackStyle(openCount)}" role="img" aria-label="${top ? `${escape(p.nickname)}: ${fruitNames[top.fruit]} ${top.count}개, 공개 더미 ${openCount}장` : '공개 카드 없음'}">${cardFace(top)}</div>`;
+}
 function seats() {
-  const r = state.room, g = r.game, players = g?.players ?? r.players;
+  const r = state.room, g = r.game, players = g?.players ?? r.players, visual = seatIndex(players);
   return players.map((p, i) => {
-    const geometry = seatGeometry(i, players.length);
+    const geometry = seatGeometry(visual(i), players.length);
     const { x, y, dx, dy, rotation } = geometry;
-    const card = p.top, mine = p.id === state.me.id;
-    const count = g ? p.cards : r.settings.mode === 'original' ? Math.floor(56 / players.length) + (i < 56 % players.length ? 1 : 0) : r.settings.cards;
-    const canFlip = mine && g?.phase === 'playing' && g.turn === i && count > 0;
+    const seat = p.seat ?? i, color = p.color ?? seat, mine = p.id === state.me.id;
+    const count = !mine ? null : g ? p.cards : r.settings.mode === 'original' ? Math.floor(56 / players.length) + (i < 56 % players.length ? 1 : 0) : r.settings.cards;
+    const hasCards = mine ? count > 0 : !g || p.status === 'active';
+    const current = g?.phase === 'playing' && g.turn === i;
+    const canFlip = mine && current && count > 0;
     const tag = mine ? 'button' : 'div';
-    return `<div class="seat ${mine ? 'mine' : ''} ${g?.phase === 'playing' && g.turn === i ? 'current' : ''} ${p.status === 'out' ? 'out' : ''} ${activeCollection?.winnerId === p.id ? 'collection-winner' : ''}" style="--x:${x}%;--y:${y}%;--radial-x:${dx};--radial-y:${dy};--seat-rotation:${rotation}deg;--name-bg:${NAME_COLORS[i % NAME_COLORS.length]};--label-factor:${Math.abs(dy)};--mobile-label-y:${dy < -.5 ? '-82px' : `calc(${Math.abs(dy)} * 27px + 31px)`}" data-seat="${p.id}" data-dx="${dx}" data-dy="${dy}" data-rotation="${rotation}"><div class="seat-piles"><${tag} class="hidden-deck card-stack ${count ? 'card-back' : 'empty-deck'}" style="${stackStyle(count)}" ${mine ? `type="button" data-do="flip" ${canFlip ? '' : 'disabled'} aria-label="내 비공개 카드 ${count}장${canFlip ? ', 눌러서 뒤집기' : ''}"` : `role="img" aria-label="${escape(p.nickname)} 비공개 카드 ${count}장"`}><span class="deck-pattern" aria-hidden="true"></span><span class="deck-count">${count}</span></${tag}><div class="playing-card ${card ? 'card-front card-stack' : 'empty-pile'}" style="${stackStyle(p.openCount ?? 0)}" role="img" aria-label="${card ? `${escape(p.nickname)}: ${fruitNames[card.fruit]} ${card.count}개, 공개 더미 ${p.openCount}장` : '공개 카드 없음'}">${cardFace(card)}</div>${flipMarkup(p.id)}</div><div class="seat-name">${i + 1}. ${escape(p.nickname)}${mine ? ' <span class="me">나</span>' : ''}</div><div class="seat-status">${g ? p.status === 'out' ? '탈락' : p.status === 'recovering' ? '종으로 복귀 가능' : `${p.cards}장` : p.ready ? '준비 완료' : '준비중'}</div></div>`;
+    const flip = activeFlips.get(p.id), flying = flip && Date.now() - flip.startedAt < 520;
+    const status = !g ? p.ready ? '준비 완료' : '준비중'
+      : p.status === 'out' ? '탈락'
+      : mine ? `내 카드 <strong>${count}</strong>장`
+      : p.status === 'recovering' ? '종으로 복귀 가능' : '';
+    return `<div class="seat ${mine ? 'mine' : ''} ${current ? 'current' : ''} ${p.status === 'out' ? 'out' : ''} ${activeCollection?.winnerId === p.id ? 'collection-winner' : ''}" style="--x:${x}%;--y:${y}%;--radial-x:${dx};--radial-y:${dy};--seat-rotation:${rotation}deg;--name-bg:${NAME_COLORS[color % NAME_COLORS.length]};--label-factor:${Math.abs(dy)};--mobile-label-y:${dy < -.5 ? '-82px' : `calc(${Math.abs(dy)} * 27px + 31px)`}" data-seat="${p.id}" data-x="${x}" data-y="${y}" data-dx="${dx}" data-dy="${dy}" data-rotation="${rotation}"><div class="seat-piles"><${tag} class="hidden-deck card-stack ${hasCards ? 'card-back' : 'empty-deck'}" style="${stackStyle(mine ? count : hasCards ? OTHER_DECK : 0)}" ${mine ? `type="button" data-do="flip" ${canFlip ? '' : 'disabled'} aria-label="내 비공개 카드 ${count}장${canFlip ? ', 눌러서 뒤집기' : ''}"` : `role="img" aria-label="${escape(p.nickname)} 비공개 카드"`}><span class="deck-pattern" aria-hidden="true"></span></${tag}>${flying ? pileMarkup(p, flip.before, flip.beforeCount) : pileMarkup(p)}${flipMarkup(p.id)}</div><div class="seat-name">${current ? '<span class="turn-tag">차례</span>' : ''}${seat + 1}. ${escape(p.nickname)}${mine ? ' <span class="me">나</span>' : ''}</div><div class="seat-status">${status}</div></div>`;
   }).join('');
+}
+// The hand of whoever hit the bell first, in their colour: it slaps down on the bell, then fades away.
+const HAND_MS = 1100;
+const HAND_SHAPES = '<rect x="40" y="108" width="50" height="62" rx="12"/><rect x="8" y="66" width="19" height="54" rx="9.5" transform="rotate(-34 22 112)"/><rect x="29" y="22" width="18" height="66" rx="9" transform="rotate(-9 38 84)"/><rect x="49" y="10" width="19" height="76" rx="9.5"/><rect x="69" y="16" width="18" height="70" rx="9" transform="rotate(7 78 84)"/><rect x="88" y="36" width="15" height="54" rx="7.5" transform="rotate(16 95 88)"/><rect x="26" y="60" width="78" height="70" rx="26"/>';
+// a whole hand seen from above (nails, knuckles, thumb, wrist and cuff); fingers point at the bell
+const handSvg = color => `<svg viewBox="-12 0 132 176" aria-hidden="true"><g fill="${color}" stroke="#3b2f22" stroke-width="7" stroke-linejoin="round">${HAND_SHAPES}</g><g fill="${color}">${HAND_SHAPES}</g><g fill="#ffffff8c"><rect x="32.5" y="25" width="11" height="13" rx="5" transform="rotate(-9 38 84)"/><rect x="53" y="13" width="11" height="13" rx="5"/><rect x="72.5" y="19" width="11" height="13" rx="5" transform="rotate(7 78 84)"/><rect x="90.5" y="39" width="10" height="11" rx="4.5" transform="rotate(16 95 88)"/><rect x="10.5" y="69" width="11" height="12" rx="5" transform="rotate(-34 22 112)"/></g><path d="M33 70q5 3 10 0M53 68q5 3 10 0M72 70q5 3 10 0M90 76q4 3 8 0" fill="none" stroke="#3b2f2259" stroke-width="2.4" stroke-linecap="round"/><rect x="36" y="150" width="58" height="24" rx="7" fill="#fffaf0" stroke="#3b2f22" stroke-width="3.5"/></svg>`;
+function ringMarkup() {
+  const r = activeRing;
+  if (!r || Date.now() - r.startedAt >= HAND_MS) return '';
+  return `<div class="hand-hit${r.ok ? '' : ' is-wrong'}" data-ring="${r.version}" data-player="${escape(r.id)}" aria-hidden="true">${handSvg(NAME_COLORS[(r.color ?? 0) % NAME_COLORS.length])}</div>`;
+}
+function playRing() {
+  const el = document.querySelector('.hand-hit'), r = activeRing;
+  if (!el || !r) return;
+  const elapsed = Date.now() - r.startedAt;
+  // the hand comes in from the hitter's side of the table (fingers toward the middle)
+  const seat = document.querySelector(`.seat[data-seat="${CSS.escape(r.id)}"]`);
+  const dx = seat ? +seat.dataset.dx : 0, dy = seat ? +seat.dataset.dy : 1, turn = seat ? +seat.dataset.rotation : 0;
+  const at = (out, scale) => `translate(-50%,-50%) translate(${dx * out}px,${dy * out}px) rotate(${turn}deg) scale(${scale})`;
+  el.animate([
+    { transform: at(150, 1.35), opacity: 0, offset: 0 },
+    { transform: at(26, 1.06), opacity: 1, offset: .2 },
+    { transform: at(18, .94), opacity: 1, offset: .28 },
+    { transform: at(20, 1), opacity: 1, offset: .55 },
+    { transform: at(20, 1.02), opacity: 0, offset: 1 },
+  ], { duration: HAND_MS, delay: -elapsed, easing: 'cubic-bezier(.25,.8,.3,1)', fill: 'both' });
+  const bell = document.querySelector('.bell-control');
+  if (bell && elapsed < 420) bell.animate([{ scale: 1 }, { scale: 1, offset: .45 }, { scale: .9, offset: .6 }, { scale: 1 }], { duration: 420, delay: -elapsed });
+  setTimeout(() => { if (activeRing === r) { activeRing = null; document.querySelector(`.hand-hit[data-ring="${r.version}"]`)?.remove(); } }, Math.max(0, HAND_MS - elapsed));
+}
+// Arrow from the bell to whoever's turn it is.
+let lastTurnAngle = null;
+function turnArrow() {
+  const g = state.room.game;
+  if (g?.phase !== 'playing' || g.turn < 0 || !g.players[g.turn]) { lastTurnAngle = null; return ''; }
+  const angle = 90 + seatIndex(g.players)(g.turn) * 360 / g.players.length;
+  return `<div class="turn-arrow" style="--turn-angle:${angle}deg" data-angle="${angle}" aria-hidden="true"><span></span></div>`;
+}
+function playTurnArrow() {
+  const el = document.querySelector('.turn-arrow'); if (!el) return;
+  const angle = Number(el.dataset.angle);
+  if (lastTurnAngle !== null && lastTurnAngle !== angle && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const turn = (angle - lastTurnAngle + 360) % 360;   // turns go clockwise
+    el.animate([{ rotate: `${angle - turn}deg` }, { rotate: `${angle}deg` }], { duration: 320, easing: 'cubic-bezier(.3,.7,.3,1)' });
+  }
+  lastTurnAngle = angle;
 }
 function flipMarkup(playerId) {
   const flip = activeFlips.get(playerId);
@@ -184,16 +269,21 @@ function flipMarkup(playerId) {
   return `<div class="flip-flight" data-flip="${playerId}" aria-hidden="true"><div class="flip-face flip-back card-back"><span class="deck-pattern"></span></div><div class="flip-face flip-front">${cardFace(flip.card)}</div></div>`;
 }
 function playCardFlips() {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { activeFlips.clear(); return; }
   for (const element of document.querySelectorAll('.flip-flight')) {
-    const seat = element.closest('.seat'), flip = activeFlips.get(element.dataset.flip);
+    const seat = element.closest('.seat'), id = element.dataset.flip, flip = activeFlips.get(id);
     if (!flip) continue;
     const elapsed = Date.now() - flip.startedAt;
     const offset = parseFloat(getComputedStyle(seat).getPropertyValue('--pile-offset'));
     const frames = flipKeyframes({ dx: Number(seat.dataset.dx), dy: Number(seat.dataset.dy), rotation: Number(seat.dataset.rotation) }, offset);
     const animation = element.animate(frames, { duration: 520, delay: -elapsed, easing: 'cubic-bezier(.35,.05,.3,1)', fill: 'both' });
     animation.finished.then(() => {
-      if (activeFlips.get(element.dataset.flip) === flip) activeFlips.delete(element.dataset.flip);
+      // (a page redraw during the flight leaves an older copy of this flight off the page; it can finish first)
+      if (activeFlips.get(id) === flip) activeFlips.delete(id);
+      if (!element.isConnected) return;
+      // the card has landed: now the pile shows it
+      const player = state?.room?.game?.players.find(p => p.id === id), pile = seat.querySelector('.playing-card');
+      if (!activeFlips.has(id) && player && pile) pile.outerHTML = pileMarkup(player);
       element.remove();
     }).catch(() => {});
   }
@@ -201,18 +291,21 @@ function playCardFlips() {
 function collectionMarkup() {
   const event = activeCollection;
   if (!event || Date.now() - event.startedAt >= 1500) return '';
-  return `<div class="collection-layer" data-collection="${event.id}" aria-hidden="true"><div class="collection-ring"></div><div class="collection-banner">${escape(event.winnerName)} <strong>+${event.total}장</strong></div>${event.piles.map((pile, index) => `<div class="collection-packet" data-source="${pile.index}" data-order="${index}"><div class="collection-stack-sheets" style="${stackStyle(pile.count)}"></div><div class="collection-card collection-front">${cardFace(pile.top)}</div><div class="collection-card collection-back card-back"><span class="deck-pattern"></span></div></div>`).join('')}</div>`;
+  return `<div class="collection-layer" data-collection="${event.id}" aria-hidden="true"><div class="collection-ring"></div><div class="collection-banner">${escape(event.winnerName)} <strong>+${event.total}장</strong></div>${event.piles.map((pile, index) => `<div class="collection-packet" data-source="${pile.index}" data-player="${escape(pile.playerId)}" data-order="${index}"><div class="collection-stack-sheets" style="${stackStyle(pile.count)}"></div><div class="collection-card collection-front">${cardFace(pile.top)}</div><div class="collection-card collection-back card-back"><span class="deck-pattern"></span></div></div>`).join('')}</div>`;
 }
 function playCollections() {
   clearTimeout(collectionTimer);
   const event = activeCollection, layer = document.querySelector('.collection-layer');
   if (!event || !layer) return;
   const elapsed = Date.now() - event.startedAt;
-  const table = document.querySelector('.game-table'), size = table.getBoundingClientRect().width;
+  // offsetWidth: the table's own size (it is scaled to fit the screen with a transform)
+  const table = document.querySelector('.game-table'), size = table.offsetWidth;
   const offset = parseFloat(getComputedStyle(document.querySelector('.seat')).getPropertyValue('--pile-offset'));
-  const winner = seatGeometry(event.winnerIndex, event.playerCount);
+  // where each seat sits on screen (seats are turned so mine is at the bottom)
+  const at = id => { const el = document.querySelector(`.seat[data-seat="${CSS.escape(id)}"]`); return el && { x: +el.dataset.x, y: +el.dataset.y, dx: +el.dataset.dx, dy: +el.dataset.dy, rotation: +el.dataset.rotation }; };
+  const winner = at(event.winnerId) ?? seatGeometry(event.winnerIndex, event.playerCount);
   for (const packet of layer.querySelectorAll('.collection-packet')) {
-    const source = seatGeometry(Number(packet.dataset.source), event.playerCount);
+    const source = at(packet.dataset.player) ?? seatGeometry(Number(packet.dataset.source), event.playerCount);
     const duration = 1100, stagger = Number(packet.dataset.order) * 36;
     if (elapsed >= duration + stagger) { packet.remove(); continue; }
     const animation = packet.animate(collectionKeyframes(source, winner, size, offset), { duration, delay: stagger - elapsed, easing: 'cubic-bezier(.32,.02,.24,1)', fill: 'both' });
@@ -239,7 +332,13 @@ function playCollections() {
 function waitingOverlay() {
   const r = state.room, g = r.game;
   if (!g) return `<div class="waiting-overlay"><h2>게임 준비</h2><p>모두 준비를 마치면 게임이 시작돼요.<br>${r.players.length < 2 ? '친구를 초대하거나 테스트 봇을 추가해보세요.' : `${r.players.filter(p => p.ready).length} / ${r.players.length}명 준비 완료`}</p><span class="pill">${endingLabel(r.settings.ending)}</span></div>`;
-  if (g.phase === 'spinning') return `<div class="waiting-overlay"><span class="eyebrow">WHO GOES FIRST?</span><h2>첫 주인공을 뽑아요!</h2><div class="wheel-pointer">▼</div><div class="wheel" style="--stop:${1440 - (g.starter * 360 / g.players.length)}deg;animation-delay:-${Math.max(0, Date.now() + offset - g.createdAt)}ms;background:conic-gradient(${g.players.map((p, i) => `${['#f1c6a3', '#d7dfb3', '#e2c9d9', '#f1dda0'][i % 4]} ${i * 360 / g.players.length}deg ${(i + 1) * 360 / g.players.length}deg`).join(',')})">${g.players.map((p, i) => `<span style="--angle:${i * 360 / g.players.length}deg">${escape(p.nickname)}</span>`).join('')}</div><p>선택된 플레이어부터 시계방향으로!</p></div>`;
+  if (g.phase === 'spinning') {
+    // each slice has the player's own colour (the same as their name tag), the name sits in the middle of the slice,
+    // and the wheel stops with the middle of the starter's slice under the pointer
+    const slice = 360 / g.players.length;
+    const colors = g.players.map((p, i) => NAME_COLORS[(p.color ?? p.seat ?? i) % NAME_COLORS.length]);
+    return `<div class="waiting-overlay"><span class="eyebrow">WHO GOES FIRST?</span><h2>첫 주인공을 뽑아요!</h2><div class="wheel-pointer">▼</div><div class="wheel${g.players.length <= 4 ? ' few' : ''}" style="--stop:${1440 - (g.starter + .5) * slice}deg;animation-delay:-${Math.max(0, Date.now() + offset - g.createdAt)}ms;background:conic-gradient(${colors.map((c, i) => `${c} ${i * slice}deg ${(i + 1) * slice}deg`).join(',')})">${g.players.length > 1 ? g.players.map((p, i) => `<i class="wheel-line" style="--angle:${i * slice}deg"></i>`).join('') : ''}${g.players.map((p, i) => `<span style="--angle:${(i + .5) * slice}deg">${escape(p.nickname)}</span>`).join('')}</div><p>선택된 플레이어부터 시계방향으로!</p></div>`;
+  }
   return '';
 }
 function resultsOverlay() {
@@ -249,8 +348,8 @@ function resultsOverlay() {
 }
 function gamePage() {
   const r = state.room, g = r.game, me = g?.players.find(p => p.id === state.me.id), waiting = !g;
-  const canRing = g?.phase === 'playing' && me.status !== 'out';
-  return `<div class="app-shell">${header()}<main id="main"><div class="room-top"><div><h1>${escape(r.name)}</h1><div class="room-tags"><span>${r.settings.mode === 'original' ? '원본 56장' : `한 명당 ${r.settings.cards}장`}</span><span>${endingLabel(r.settings.ending)}</span><span>${r.players.length}/${r.settings.max}명</span></div></div><button class="button secondary" data-do="leave">나가기 ${icon('logout')}</button></div><div class="game-layout">${chatPanel('room')}<section class="glass game-center" aria-label="게임판"><div class="table-meta"><div class="in-game-ranks"><span class="eyebrow">이번 판 순위</span><div class="rank-chips">${g ? [...g.players].sort((a,b) => b.cards-a.cards).map((p, i, list) => `<span class="rank-chip">${list.findIndex(q => q.cards === p.cards) + 1}. ${escape(p.nickname)}<strong>${p.cards}</strong></span>`).join('') : '<span>게임이 시작되면 표시돼요</span>'}</div></div><div class="game-status">${g?.phase === 'playing' ? `<span class="pill"><i class="dot"></i>${g.turn >= 0 ? `${escape(g.players[g.turn].nickname)}님 차례` : '종 판정 대기'}</span><br><span id="turn-timer"></span>` : '<span class="pill">준비 시간</span>'}</div></div><div class="game-table"><div class="table-ring"></div>${seats()}${collectionMarkup()}<button class="bell-control" data-do="ring" ${canRing ? '' : 'disabled'} aria-label="종 누르기, 스페이스 키">${bellArt()}</button></div>${waitingOverlay()}${g?.phase === 'announcing' ? `<div class="start-popup" role="status">${escape(g.players[g.starter].nickname)}님부터 시작합니다!</div>` : ''}<p class="notice-bar" role="status">${escape(g?.notice ?? '모두 준비가 되면 시작 플레이어를 뽑아요.')}</p><div class="game-controls"><div class="my-cards">내 카드 <strong>${me?.cards ?? '—'}</strong>${me ? '장' : ''}</div><div class="controls-right"><button class="button secondary" data-do="rules" aria-label="게임 방법">${icon('help')}</button>${waiting ? `<button class="button primary ready-action ${r.players.find(p => p.id === state.me.id).ready ? 'is-ready' : ''}" data-do="ready" aria-pressed="${r.players.find(p => p.id === state.me.id).ready}">${r.players.find(p => p.id === state.me.id).ready ? '준비 취소' : '준비 완료'}</button>` : ''}</div></div>${resultsOverlay()}</section>${presencePanel(true)}</div></main>${footer()}</div>`;
+  const canRing = g?.phase === 'playing' && me && me.status !== 'out';
+  return `<div class="app-shell">${header()}<main id="main"><div class="room-top"><div><h1>${escape(r.name)}</h1><div class="room-tags"><span>${r.settings.mode === 'original' ? '원본 56장' : `한 명당 ${r.settings.cards}장`}</span><span>${endingLabel(r.settings.ending)}</span><span>${r.players.length}/${r.settings.max}명</span></div></div><button class="button secondary" data-do="leave">나가기 ${icon('logout')}</button></div><div class="game-layout">${chatPanel('room')}<section class="glass game-center" aria-label="게임판"><div class="table-meta"><div class="game-status">${g?.phase === 'playing' ? `<span class="pill"><i class="dot"></i>${g.turn >= 0 ? `${g.players[g.turn].id === state.me.id ? '내' : `${escape(g.players[g.turn].nickname)}님`} 차례` : '종 판정 대기'}</span><br><span id="turn-timer"></span>` : '<span class="pill">준비 시간</span>'}</div></div><div class="table-stage"><div class="game-table"><div class="table-ring"></div>${turnArrow()}${seats()}${collectionMarkup()}${ringMarkup()}<button class="bell-control" data-do="ring" ${canRing ? '' : 'disabled'} aria-label="종 누르기, 스페이스 키">${bellArt()}</button></div></div>${waitingOverlay()}${g?.phase === 'announcing' ? `<div class="start-popup" role="status">${escape(g.players[g.starter].nickname)}님부터 시작합니다!</div>` : ''}<div class="game-controls"><p class="notice-bar" role="status">${escape(g?.notice ?? '모두 준비가 되면 시작 플레이어를 뽑아요.')}</p><div class="controls-right"><button class="button secondary" data-do="rules" aria-label="게임 방법">${icon('help')}</button>${waiting ? `<button class="button primary ready-action ${r.players.find(p => p.id === state.me.id).ready ? 'is-ready' : ''}" data-do="ready" aria-pressed="${r.players.find(p => p.id === state.me.id).ready}">${r.players.find(p => p.id === state.me.id).ready ? '준비 취소' : '준비 완료'}</button>` : ''}</div></div>${resultsOverlay()}</section>${presencePanel(true)}</div></main>${footer()}</div>`;
 }
 function render() {
   if (composing) { renderPending = true; return; }
@@ -262,7 +361,7 @@ function render() {
   document.body.classList.toggle('in-game', !!state?.room);
   document.body.classList.toggle('paused', paused);
   app.innerHTML = state ? state.room ? gamePage() : lobbyPage() : authPage();
-  updateConnection(); updateTimer(); playCardFlips(); playCollections();
+  fitTable(); updateConnection(); updateTimer(); playCardFlips(); playCollections(); playTurnArrow(); playRing();
   document.querySelectorAll('[data-chat]').forEach(el => { const old = scrolls[el.dataset.chat]; el.scrollTop = old && !old.bottom ? old.top : el.scrollHeight; });
   if (focusedId && document.getElementById(focusedId)) {
     const target = document.getElementById(focusedId); target.focus({ preventScroll: true });
@@ -274,6 +373,19 @@ function render() {
   }
   lastRoom = roomId; lastPhase = phase;
 }
+// The table keeps one shape at every screen size: the game area fills the window height (big screens get a big
+// table, small screens a small one) and the table is scaled as a whole so nothing changes proportion.
+const STAGE = { desk: 760, phone: 340 };
+function fitTable() {
+  const layout = $('.game-layout'), root = document.documentElement;
+  if (!layout) return;
+  const phone = matchMedia('(max-width:650px)').matches;
+  if (!phone) root.style.setProperty('--fit-h', `${Math.max(420, Math.floor(innerHeight - (layout.getBoundingClientRect().top + scrollY) - 18))}px`);
+  const stage = $('.table-stage'); if (!stage) return;
+  const k = phone ? stage.clientWidth / STAGE.phone : Math.min(stage.clientWidth / (STAGE.desk - 20), stage.clientHeight / (STAGE.desk - 30));
+  root.style.setProperty('--k', String(Math.max(.3, Math.min(1.5, k)).toFixed(4)));
+}
+addEventListener('resize', () => { if (state?.room) fitTable(); });
 function updateTimer() {
   const el = $('#turn-timer'), deadline = state?.room?.game?.deadline;
   if (el) el.textContent = deadline ? `${Math.max(0, Math.ceil((deadline - Date.now() - offset) / 1000))}초 후 자동 뒤집기` : '뒤집을 카드가 없어 종을 기다려요';

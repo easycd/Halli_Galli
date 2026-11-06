@@ -1,4 +1,5 @@
-export const NAME_COLORS = ['#f0c4bf', '#d7e5b1', '#d8c6ed', '#f3dda2', '#b9dfdc', '#e9bfd7', '#c7d8ee', '#e6d3ba'];
+// eight clearly different colours, one per player (up to 8 at a table); dark text stays readable on all of them
+export const NAME_COLORS = ['#f4b6ae', '#cfe5a6', '#d3c1f0', '#f6dc8f', '#a8dcd6', '#f2b8d8', '#b9d2f2', '#f7c99a'];
 
 // Starting at the bottom, all seats follow the same clockwise circle.
 export function seatGeometry(index, count) {
@@ -27,7 +28,9 @@ export function detectCollection(previous, next) {
   const winner = winners[0], beforeWinner = previous.players.find(p => p.id === winner.id);
   const piles = previous.players.map((p, index) => ({ playerId: p.id, index, count: p.openCount, top: p.top })).filter(p => p.count > 0 && p.top);
   const total = piles.reduce((sum, pile) => sum + pile.count, 0);
-  if (!total || winner.cards - beforeWinner.cards !== total) return null;
+  // card counts are only known for my own seat (others are hidden), so check them only when both are known
+  const known = Number.isInteger(winner.cards) && Number.isInteger(beforeWinner.cards);
+  if (!total || (known && winner.cards - beforeWinner.cards !== total)) return null;
   return { id: `${next.id}:${next.version}`, winnerId: winner.id, winnerName: winner.nickname, winnerIndex: next.players.indexOf(winner), playerCount: next.players.length, total, piles };
 }
 

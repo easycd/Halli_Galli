@@ -18,7 +18,7 @@ export class Game {
   constructor(players, settings, { pick = n => randomInt(n), now = Date.now() } = {}) {
     this.id = randomUUID();
     this.settings = settings;
-    this.players = players.map(p => ({ ...p, deck: [], open: [], status: 'active', hits: 0, misses: 0, eliminatedAt: null }));
+    this.players = players.map((p, seat) => ({ ...p, seat, deck: [], open: [], status: 'active', hits: 0, misses: 0, eliminatedAt: null }));
     let cards = [];
     const total = settings.mode === 'original' ? 56 : settings.cards * players.length;
     while (cards.length < total) cards.push(...baseDeck());
@@ -38,6 +38,8 @@ export class Game {
     this.draw = false;
     this.actions = new Map();
     this.eliminationWave = 0;
+    this.departures = [];   // players who left mid-game: { id, nickname, version }
+    this.lastRing = null;   // who hit the bell last: { id, nickname, color, ok, version } (the hand animation)
   }
   counts() {
     const result = Object.fromEntries(FRUITS.map(f => [f, 0]));
@@ -86,7 +88,8 @@ export class Game {
   ring(id, now = Date.now()) {
     const p = this.players.find(p => p.id === id);
     if (this.phase !== 'playing' || !p || p.status === 'out') throw new Error('지금은 종을 누를 수 없어요.');
-    if (this.canRing()) {
+    const right = this.canRing();
+    if (right) {
       const won = this.players.flatMap(p => p.open.splice(0));
       p.deck.push(...won); p.status = 'active'; p.hits++;
       this.eliminate(this.players.filter(other => other.id !== id && other.status === 'recovering' && !other.deck.length));
@@ -108,8 +111,36 @@ export class Game {
       if (this.turn < 0 || !this.players[this.turn]?.deck.length) this.nextTurn(this.turn < 0 ? this.players.indexOf(p) : this.turn, now);
     }
     this.version++;
+    this.lastRing = { id: p.id, nickname: p.nickname, color: p.color ?? p.seat, ok: right, version: this.version };
     this.checkEnd();
     this.checkStalemate();
+  }
+  // A player left mid-game: their cards (deck and open pile) and their turn go away; the rest play on.
+  // With one player (or none) left the game ends and the last one standing wins.
+  removePlayer(id, now = Date.now()) {
+    const index = this.players.findIndex(p => p.id === id);
+    if (index < 0 || this.phase === 'finished') return false;
+    const [gone] = this.players.splice(index, 1);
+    this.version++;
+    this.departures.push({ id: gone.id, nickname: gone.nickname, version: this.version });
+    this.notice = `${gone.nickname}님이 게임에서 나갔어요.`;
+    if (this.starter > index) this.starter--;
+    else if (this.starter === index) this.starter = this.players.length ? index % this.players.length : 0;
+    if (this.turn > index) this.turn--;
+    else if (this.turn === index) {
+      // the next player clockwise takes the turn
+      if (this.phase === 'playing') this.nextTurn((index - 1 + this.players.length) % Math.max(1, this.players.length), now);
+      else this.turn = this.starter;
+    }
+    const survivors = this.players.filter(p => p.status !== 'out');
+    if (survivors.length <= 1) {
+      this.notice = survivors.length ? `${gone.nickname}님이 나가서 ${survivors[0].nickname}님이 우승했어요!` : `${gone.nickname}님이 나가 게임을 마쳤어요.`;
+      this.finish();
+      return true;
+    }
+    if (this.phase === 'playing' && (this.turn < 0 || !this.players[this.turn]?.deck.length)) this.nextTurn(Math.max(0, this.turn), now);
+    this.checkStalemate();
+    return true;
   }
   checkEnd() {
     const survivors = this.players.filter(p => p.status !== 'out');
@@ -148,12 +179,14 @@ export class Game {
     if (this.actions.size > 2000) this.actions.delete(this.actions.keys().next().value);
     return result;
   }
-  snapshot() {
+  // Card counts are private: each viewer sees only their own until the game is over.
+  snapshot(viewerId = null) {
+    const reveal = id => this.phase === 'finished' || id === viewerId;
     return {
       id: this.id, version: this.version, phase: this.phase, turn: this.turn, starter: this.starter,
       createdAt: this.createdAt, announceAt: this.announceAt, startsAt: this.startsAt, deadline: this.deadline,
-      notice: this.notice, results: this.results, draw: this.draw,
-      players: this.players.map(({ deck, open, ...p }) => ({ ...p, cards: deck.length, openCount: open.length, top: open.at(-1) ?? null })),
+      notice: this.notice, results: this.results, draw: this.draw, departures: this.departures, lastRing: this.lastRing,
+      players: this.players.map(({ deck, open, ...p }) => ({ ...p, cards: reveal(p.id) ? deck.length : null, openCount: open.length, top: open.at(-1) ?? null })),
     };
   }
 }
