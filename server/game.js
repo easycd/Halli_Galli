@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
+import { stackLevel } from '../public/table-layout.js';
 
 export const FRUITS = ['strawberry', 'banana', 'lime', 'plum'];
 export const BASE_COUNTS = [5, 3, 3, 2, 1];
@@ -33,7 +34,7 @@ export class Game {
     this.announceAt = now + 3000;
     this.startsAt = now + 4500;
     this.deadline = this.startsAt + 10000;
-    this.notice = '모두 준비 완료! 시작 플레이어를 뽑고 있어요.';
+    this.notice = '첫 차례 뽑는 중';
     this.results = [];
     this.draw = false;
     this.actions = new Map();
@@ -53,7 +54,7 @@ export class Game {
   tick(now = Date.now()) {
     if (this.phase === 'spinning' && now >= this.announceAt) { this.phase = 'announcing'; return true; }
     if (this.phase === 'announcing' && now >= this.startsAt) {
-      this.phase = 'playing'; this.notice = `${this.players[this.turn].nickname}님부터 시작합니다!`; return true;
+      this.phase = 'playing'; this.notice = `${this.players[this.turn].nickname}님부터 시작`; return true;
     }
     if (this.phase === 'playing' && now >= this.deadline && this.players[this.turn]?.deck.length) {
       this.flip(this.players[this.turn].id, now); return true;
@@ -64,19 +65,33 @@ export class Game {
     for (let i = 1; i <= this.players.length; i++) {
       const index = (from + i) % this.players.length;
       if (this.players[index].deck.length && this.players[index].status !== 'out') {
-        this.turn = index; this.deadline = now + 10000; return;
+        this.turn = index; this.deadline = now + 10000; this.clearHolds(); return;
       }
     }
     this.turn = -1;
     this.deadline = null;
+    this.clearHolds();
+  }
+  clearHolds() { for (const p of this.players) p.holding = false; }
+  // The player whose turn it is presses their deck: the top card is held up, about to be flipped (everyone sees it).
+  // Letting go on the deck flips it (flip); dragging off the deck puts it back (on = false). It is only a show,
+  // so it does not change the game version (a bell hit sent at the same moment still counts).
+  hold(id, on) {
+    const p = this.players.find(p => p.id === id);
+    if (!p) return false;
+    const next = on && this.phase === 'playing' && this.players[this.turn] === p && p.deck.length > 0;
+    if (!!p.holding === next) return false;
+    p.holding = next;
+    return true;
   }
   flip(id, now = Date.now()) {
     const p = this.players[this.turn];
     if (this.phase !== 'playing' || !p || p.id !== id || !p.deck.length) throw new Error('지금은 카드를 뒤집을 수 없어요.');
     p.open.push(p.deck.shift());
+    p.holding = false;
     if (!p.deck.length) p.status = 'recovering';
     this.version++;
-    this.notice = `${p.nickname}님이 카드를 뒤집었어요.`;
+    this.notice = `${p.nickname}님이 뒤집었어요`;
     this.nextTurn(this.turn, now);
     this.checkStalemate();
   }
@@ -93,8 +108,8 @@ export class Game {
       const won = this.players.flatMap(p => p.open.splice(0));
       p.deck.push(...won); p.status = 'active'; p.hits++;
       this.eliminate(this.players.filter(other => other.id !== id && other.status === 'recovering' && !other.deck.length));
-      this.turn = this.players.indexOf(p); this.deadline = now + 10000;
-      this.notice = `${p.nickname}님 정답! ${won.length}장을 가져갔어요.`;
+      this.turn = this.players.indexOf(p); this.deadline = now + 10000; this.clearHolds();
+      this.notice = `${p.nickname}님 정답 · ${won.length}장 가져감`;
     } else {
       p.misses++;
       if (!p.deck.length) this.eliminate([p]);
@@ -107,7 +122,7 @@ export class Game {
         }
         if (!p.deck.length) p.status = 'recovering';
       }
-      this.notice = `${p.nickname}님 오답! 다른 플레이어에게 카드 한 장씩 지급해요.`;
+      this.notice = `${p.nickname}님 오답 · 한 장씩 나눠 줌`;
       if (this.turn < 0 || !this.players[this.turn]?.deck.length) this.nextTurn(this.turn < 0 ? this.players.indexOf(p) : this.turn, now);
     }
     this.version++;
@@ -123,7 +138,7 @@ export class Game {
     const [gone] = this.players.splice(index, 1);
     this.version++;
     this.departures.push({ id: gone.id, nickname: gone.nickname, version: this.version });
-    this.notice = `${gone.nickname}님이 게임에서 나갔어요.`;
+    this.notice = `${gone.nickname}님이 나갔어요`;
     if (this.starter > index) this.starter--;
     else if (this.starter === index) this.starter = this.players.length ? index % this.players.length : 0;
     if (this.turn > index) this.turn--;
@@ -134,7 +149,7 @@ export class Game {
     }
     const survivors = this.players.filter(p => p.status !== 'out');
     if (survivors.length <= 1) {
-      this.notice = survivors.length ? `${gone.nickname}님이 나가서 ${survivors[0].nickname}님이 우승했어요!` : `${gone.nickname}님이 나가 게임을 마쳤어요.`;
+      this.notice = survivors.length ? `${gone.nickname}님이 나가 ${survivors[0].nickname}님 우승` : `${gone.nickname}님이 나가 게임 끝`;
       this.finish();
       return true;
     }
@@ -148,11 +163,11 @@ export class Game {
   }
   checkStalemate() {
     if (this.phase === 'playing' && this.players.every(p => !p.deck.length) && !this.canRing()) {
-      this.draw = true; this.notice = '뒤집을 카드와 정답 조건이 없어 무승부로 종료했어요.'; this.finish();
+      this.draw = true; this.notice = '낼 카드가 없어 무승부'; this.finish();
     }
   }
   finish() {
-    this.phase = 'finished'; this.deadline = null;
+    this.phase = 'finished'; this.deadline = null; this.clearHolds();
     const sorted = [...this.players].sort((a, b) => {
       if (a.status !== 'out' && b.status === 'out') return -1;
       if (a.status === 'out' && b.status !== 'out') return 1;
@@ -179,14 +194,15 @@ export class Game {
     if (this.actions.size > 2000) this.actions.delete(this.actions.keys().next().value);
     return result;
   }
-  // Card counts are private: each viewer sees only their own until the game is over.
+  // Card counts are private: each viewer sees only their own until the game is over. Everyone sees how thick
+  // each deck looks (stack: a rough level, 3 cards a step), like on a real table.
   snapshot(viewerId = null) {
     const reveal = id => this.phase === 'finished' || id === viewerId;
     return {
       id: this.id, version: this.version, phase: this.phase, turn: this.turn, starter: this.starter,
       createdAt: this.createdAt, announceAt: this.announceAt, startsAt: this.startsAt, deadline: this.deadline,
       notice: this.notice, results: this.results, draw: this.draw, departures: this.departures, lastRing: this.lastRing,
-      players: this.players.map(({ deck, open, ...p }) => ({ ...p, cards: reveal(p.id) ? deck.length : null, openCount: open.length, top: open.at(-1) ?? null })),
+      players: this.players.map(({ deck, open, holding, ...p }, i) => ({ ...p, cards: reveal(p.id) ? deck.length : null, stack: stackLevel(deck.length), holding: !!holding && this.phase === 'playing' && i === this.turn, openCount: open.length, top: open.at(-1) ?? null })),
     };
   }
 }

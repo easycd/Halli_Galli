@@ -64,7 +64,7 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
     room.players = room.players.filter(p => p.id !== user.id);
     if (room.game && room.game.phase !== 'finished') {
       // Mid-game: their cards and turn go away and the others play on; one player left → that player wins.
-      room.messages.push({ id: randomUUID(), nickname: '안내', text: `${user.nickname}님이 게임에서 나갔어요.`, at: Date.now(), system: true });
+      room.messages.push({ id: randomUUID(), nickname: '안내', text: `${user.nickname}님이 나갔어요`, at: Date.now(), system: true });
       room.game.removePlayer(user.id);
       record(room);
     } else {
@@ -214,6 +214,10 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
             if (!room?.game || data.gameId !== room.game.id) throw new Error('현재 경기를 찾을 수 없어요.');
             room.game.act(user.id, data.action, data.actionId, data.version);
             room.botAt = Date.now() + 650 + randomInt(650); record(room); break;
+          case '/api/hold':
+            if (!room?.game || data.gameId !== room.game.id) throw new Error('현재 경기를 찾을 수 없어요.');
+            if (!room.game.hold(user.id, data.on === true)) return json(200, { ok: true });
+            break;
           case '/api/chat': {
             rate(`chat:${user.id}`, 1, 800);
             if (typeof data.text !== 'string' || !data.text.trim() || data.text.length > 200) throw new Error('메시지는 1~200자로 입력해주세요.');

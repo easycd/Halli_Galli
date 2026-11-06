@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { seatGeometry, flipKeyframes, detectCollection, collectionKeyframes } from '../public/table-layout.js';
+import { seatGeometry, flipKeyframes, liftKeyframes, detectCollection, collectionKeyframes, SEAT_RADIUS, labelTurn, stackLevel } from '../public/table-layout.js';
 
 test('2-8 players have equally spaced seats on a true circle, starting at bottom', () => {
   for (let count = 2; count <= 8; count++) {
     const seats = Array.from({ length: count }, (_, i) => seatGeometry(i, count));
     assert.ok(Math.abs(seats[0].x - 50) < 1e-9);
-    assert.equal(seats[0].y, 80);
+    assert.equal(seats[0].y, 50 + SEAT_RADIUS);
     for (let i = 0; i < count; i++) {
       const p = seats[i], next = seats[(i + 1) % count];
-      assert.ok(Math.abs(Math.hypot(p.x - 50, p.y - 50) - 30) < 1e-9);
+      assert.ok(Math.abs(Math.hypot(p.x - 50, p.y - 50) - SEAT_RADIUS) < 1e-9);
       const distance = Math.hypot(p.x - next.x, p.y - next.y);
-      assert.ok(Math.abs(distance - 60 * Math.sin(Math.PI / count)) < 1e-9);
+      assert.ok(Math.abs(distance - 2 * SEAT_RADIUS * Math.sin(Math.PI / count)) < 1e-9);
     }
   }
 });
@@ -67,4 +67,27 @@ test('all eight sources converge on any winner private pile without changing gam
       assert.match(last.transform, /rotateY\(180deg\)/);
     }
   }
+});
+
+test('a held card flips on from where it was held; name tags are never upside down', () => {
+  for (let i = 0; i < 8; i++) {
+    const seat = seatGeometry(i, 8), frames = flipKeyframes(seat, 56, true, .77);
+    const radius = frame => Math.hypot(parseFloat(frame.left), parseFloat(frame.top));
+    assert.ok(Math.abs(radius(frames[0]) - 44) < 1e-9, 'starts at the held spot, a little inside the deck');
+    assert.match(frames[0].transform, /rotateX\(-42deg\)/);
+    assert.match(frames.at(-1).transform, /rotateX\(-180deg\)/);
+    const [rest, held] = liftKeyframes(seat, 56, .77);
+    assert.equal(held.left, frames[0].left); assert.equal(held.transform, frames[0].transform);
+    assert.ok(Math.abs(Math.hypot(parseFloat(rest.left), parseFloat(rest.top)) - 56) < 1e-9);
+    const { angle, out } = labelTurn(seat.rotation);
+    assert.ok(angle >= -90 && angle <= 90, `${seat.rotation} → ${angle}`);
+    assert.equal(out, seat.rotation > 90 && seat.rotation < 270 ? -1 : 1);
+  }
+});
+
+test('decks look thicker with more cards', () => {
+  assert.equal(stackLevel(0), 0);
+  assert.equal(stackLevel(1), 1);
+  assert.ok(stackLevel(5) < stackLevel(15) && stackLevel(15) < stackLevel(30));
+  assert.equal(stackLevel(200), 14);
 });

@@ -1,4 +1,4 @@
-import { seatGeometry, flipKeyframes, detectCollection, collectionKeyframes, NAME_COLORS } from './table-layout.js';
+import { seatGeometry, flipKeyframes, liftKeyframes, labelTurn, stackLevel, detectCollection, collectionKeyframes, NAME_COLORS } from './table-layout.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const app = $('#app');
 const fruitNames = { strawberry: '딸기', banana: '바나나', lime: '라임', plum: '자두' };
@@ -35,6 +35,11 @@ let activeCollection = null, collectionTimer;
 const seenCollections = new Set();
 const seenDepartures = new Set();
 let activeRing = null, seenRing = null;   // the hand on the bell
+// Holding my deck: the top card stays lifted until I let go on the deck (flip) or drag off it (put back).
+let myHold = null;            // { startedAt, pointerId, rect, sent } while I press my deck
+const lifts = new Map();      // playerId → { startedAt, down } : a held card going up, or (down) going back
+const LIFT_MS = 170;
+let celebrated = null;   // the game I last showed winner fireworks for
 function background() {
   $('#background').innerHTML = Array.from({ length: 12 }, (_, i) => {
     const seed = crypto.getRandomValues(new Uint32Array(3));
@@ -84,19 +89,79 @@ function accept(next) {
       const previous = previousGame.players.find(p => p.id === player.id);
       if (player.top && previous && player.top.id !== previous.top?.id && player.openCount === previous.openCount + 1) {
         // keep showing the old top card until the flying card lands, so the new card is never seen early
-        activeFlips.set(player.id, { card: player.top, before: previous.top, beforeCount: previous.openCount, startedAt: Date.now() });
-      } else if (!player.top) activeFlips.delete(player.id);
+        // a card that was held up flies on from there
+        const lifted = player.id === next.me?.id ? !!myHold : !!previous.holding;
+        activeFlips.set(player.id, { card: player.top, before: previous.top, beforeCount: previous.openCount, startedAt: Date.now(), lifted });
+        lifts.delete(player.id);
+        if (player.id === next.me?.id) myHold = null;
+      } else {
+        if (!player.top) activeFlips.delete(player.id);
+        // someone else picked their card up, or put it back
+        if (player.id !== next.me?.id && !!player.holding !== !!previous.holding) liftStart(player.id, !player.holding);
+      }
     }
   }
+  // my turn is over (a bell, the timer, the game ended) while I was still pressing: the card goes back
+  if (myHold && !(nextGame?.phase === 'playing' && nextGame.players[nextGame.turn]?.id === next.me?.id)) { myHold = null; liftStart(next.me.id, true); }
   const departed = (nextGame?.departures ?? []).filter(d => d.id !== next.me?.id && !seenDepartures.has(`${nextGame.id}:${d.version}`));
   state = next; offset = next.serverTime - Date.now();
   const game = state.room?.game;
   if (game?.notice && game.notice !== lastNotice && ['playing', 'finished'].includes(game.phase)) {
-    if (game.notice.includes('정답!')) chime();
+    if (game.notice.includes('정답 ·')) chime();
     lastNotice = game.notice;
   }
   render();
   for (const d of departed) { seenDepartures.add(`${game.id}:${d.version}`); showDeparture(d, game); }
+  // I won: fireworks (once per game, only when I saw the game end here, not after a reload)
+  if (game?.phase === 'finished' && previousGame?.id === game.id && previousGame.phase !== 'finished' && celebrated !== game.id
+    && game.results.some(r => r.winner && r.id === state.me.id)) {
+    celebrated = game.id;
+    const wait = activeCollection ? Math.max(0, 1500 - (Date.now() - activeCollection.startedAt)) : 0;
+    setTimeout(() => celebrate(game.id), wait);
+  }
+}
+// ── winner fireworks ──
+function celebrate(gameId) {
+  if (state?.room?.game?.id !== gameId) return;
+  const dialog = $('#left-dialog');
+  if (dialog.open) { dialog.addEventListener('close', () => celebrate(gameId), { once: true }); return; }
+  const layer = document.createElement('div');
+  layer.className = 'fireworks'; layer.setAttribute('aria-hidden', 'true');
+  layer.innerHTML = '<canvas></canvas><div class="win-banner">우승!</div>';
+  document.body.append(layer);
+  const done = () => layer.remove();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { setTimeout(done, 2600); return; }
+  const canvas = layer.querySelector('canvas'), ctx = canvas.getContext('2d'), dpr = Math.min(2, devicePixelRatio || 1);
+  const size = () => { canvas.width = innerWidth * dpr; canvas.height = innerHeight * dpr; };
+  size(); addEventListener('resize', size);
+  const colors = [...NAME_COLORS, '#ffe390', '#ff6f5e', '#ffffff'];
+  const sparks = [], start = performance.now(), DURATION = 3800;
+  let nextBurst = 0, last = start;
+  const burst = () => {
+    const x = innerWidth * (.18 + Math.random() * .64), y = innerHeight * (.15 + Math.random() * .4);
+    const color = colors[Math.floor(Math.random() * colors.length)], n = 46 + Math.floor(Math.random() * 24), speed = 2.2 + Math.random() * 1.8;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2 + Math.random() * .2, v = speed * (.55 + Math.random() * .45);
+      sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, decay: .011 + Math.random() * .009, color: Math.random() < .2 ? '#ffffff' : color });
+    }
+  };
+  const frame = now => {
+    if (!layer.isConnected) return removeEventListener('resize', size);
+    const t = now - start, step = Math.min(3, (now - last) / 16.7); last = now;
+    if (t < DURATION - 900 && t >= nextBurst) { burst(); if (Math.random() < .35) burst(); nextBurst = t + 260 + Math.random() * 260; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, innerWidth, innerHeight);
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const p = sparks[i];
+      p.x += p.vx * step; p.y += p.vy * step; p.vy += .045 * step; p.vx *= .985 ** step; p.vy *= .985 ** step; p.life -= p.decay * step;
+      if (p.life <= 0) { sparks.splice(i, 1); continue; }
+      ctx.globalAlpha = Math.min(1, p.life * 1.4); ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 1.8 + p.life * 2.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (t < DURATION || sparks.length) requestAnimationFrame(frame);
+    else { removeEventListener('resize', size); done(); }
+  };
+  requestAnimationFrame(frame);
 }
 // Someone left mid-game: say so; when only one player is left, say who won.
 function showDeparture(d, game) {
@@ -104,8 +169,8 @@ function showDeparture(d, game) {
   const winner = game.phase === 'finished' && !game.draw ? game.results.find(r => r.winner) : null;
   $('#left-title').textContent = `${d.nickname}님이 게임에서 나갔어요`;
   $('#left-body').textContent = game.phase === 'finished'
-    ? winner ? `함께할 사람이 없어 게임이 끝났어요. ${winner.nickname}님 우승!` : '함께할 사람이 없어 게임이 끝났어요.'
-    : '나간 사람의 카드와 차례는 없어졌어요. 남은 사람끼리 계속해요.';
+    ? winner ? `혼자 남아 게임이 끝났어요. ${winner.nickname}님 우승` : '게임이 끝났어요.'
+    : '그 사람 카드와 차례는 빠졌어요.';
   if (!dialog.open) dialog.showModal();
 }
 function connect() {
@@ -173,16 +238,17 @@ function roomCard(room, i) {
   return `<article class="room-card glass"><div class="room-illustration">${fruit(fruits[i % 4])}</div><div class="room-info"><span class="pill"><i class="dot ${playing ? 'playing' : ''}"></i>${playing ? '게임중' : '대기중'}</span><h3>${escape(room.name)}</h3><div class="room-tags"><span>${room.settings.mode === 'original' ? '원본 56장' : `한 명당 ${room.settings.cards}장`}</span><span>${endingLabel(room.settings.ending)}</span></div></div><div class="room-join"><small>${room.count} / ${room.settings.max}명</small><button class="button secondary" data-join="${room.id}" ${playing || full ? 'disabled' : ''}>${playing ? '진행중' : full ? '가득 참' : '입장하기'}</button></div></article>`;
 }
 function lobbyPage() {
-  return `<div class="app-shell">${header()}<main id="main"><div class="welcome-row"><div><h1>로비</h1></div><span class="pill"><i class="dot"></i>${state.online.length}명이 함께하고 있어요</span></div>${leaderboard()}<div class="lobby-grid">${chatPanel('global')}<section class="center-content"><div class="section-heading room-heading"><div class="section-title"><h2>열려 있는 테이블</h2><span class="pill">${state.rooms.length}</span></div><button class="button primary" data-do="create">${icon('plus')} 방 만들기</button></div><div class="room-list">${state.rooms.length ? state.rooms.map(roomCard).join('') : `<div class="glass empty-rooms"><div class="table-art">${fruit('strawberry')}${fruit('banana')}${fruit('lime')}</div><p>생성된 방 없음</p><button class="button secondary" data-do="create">방 만들기 ${icon('arrow')}</button></div>`}</div></section>${presencePanel()}</div></main>${footer()}</div>`;
+  return `<div class="app-shell">${header()}<main id="main"><div class="welcome-row"><div><h1>로비</h1></div><span class="pill"><i class="dot"></i>접속 ${state.online.length}명</span></div>${leaderboard()}<div class="lobby-grid">${chatPanel('global')}<section class="center-content"><div class="section-heading room-heading"><div class="section-title"><h2>열려 있는 테이블</h2><span class="pill">${state.rooms.length}</span></div><button class="button primary" data-do="create">${icon('plus')} 방 만들기</button></div><div class="room-list">${state.rooms.length ? state.rooms.map(roomCard).join('') : `<div class="glass empty-rooms"><div class="table-art">${fruit('strawberry')}${fruit('banana')}${fruit('lime')}</div><p>생성된 방 없음</p><button class="button secondary" data-do="create">방 만들기 ${icon('arrow')}</button></div>`}</div></section>${presencePanel()}</div></main>${footer()}</div>`;
 }
-function stackStyle(count) {
-  const layers = Math.min(12, Math.ceil(Math.max(0, count) / 3));
+// A pile is drawn as a stack of card edges: more cards, a thicker stack (--sheet is the edge step, smaller on phones).
+function stackStyle(count) { return layerStyle(stackLevel(count)); }
+function layerStyle(layers) {
   const shadows = [];
   for (let i = 1; i < layers; i++) {
-    shadows.push(`0 ${i * 1.5}px 0 -.5px #fffdf8`, `0 ${i * 1.5 + .7}px 0 -.5px #b7b5ab`);
+    shadows.push(`0 calc(var(--sheet) * ${i}) 0 -.5px #fffdf8`, `0 calc(var(--sheet) * ${i} + .7px) 0 -.5px #a9a79d`);
   }
-  shadows.push(`0 ${layers * 1.5 + 4}px 9px #001f1666`);
-  return `--pile-shadow:${count ? shadows.join(',') : 'none'};--layers:${layers}`;
+  shadows.push(`0 calc(var(--sheet) * ${layers} + 4px) 9px #001f1666`);
+  return `--pile-shadow:${layers ? shadows.join(',') : 'none'};--layers:${layers}`;
 }
 function cardFace(card) {
   if (!card) return '';
@@ -194,7 +260,6 @@ function seatIndex(players) {
   const mine = Math.max(0, players.findIndex(p => p.id === state.me.id));
   return i => (i - mine + players.length) % players.length;
 }
-const OTHER_DECK = 18;   // others' decks are drawn at one fixed height so their size gives nothing away
 function pileMarkup(p, top = p.top, openCount = p.openCount ?? 0) {
   return `<div class="playing-card ${top ? 'card-front card-stack' : 'empty-pile'}" style="${stackStyle(openCount)}" role="img" aria-label="${top ? `${escape(p.nickname)}: ${fruitNames[top.fruit]} ${top.count}개, 공개 더미 ${openCount}장` : '공개 카드 없음'}">${cardFace(top)}</div>`;
 }
@@ -204,17 +269,18 @@ function seats() {
     const geometry = seatGeometry(visual(i), players.length);
     const { x, y, dx, dy, rotation } = geometry;
     const seat = p.seat ?? i, color = p.color ?? seat, mine = p.id === state.me.id;
-    const count = !mine ? null : g ? p.cards : r.settings.mode === 'original' ? Math.floor(56 / players.length) + (i < 56 % players.length ? 1 : 0) : r.settings.cards;
-    const hasCards = mine ? count > 0 : !g || p.status === 'active';
+    const dealt = r.settings.mode === 'original' ? Math.floor(56 / players.length) + (i < 56 % players.length ? 1 : 0) : r.settings.cards;
+    const count = !mine ? null : g ? p.cards : dealt;
+    const layers = mine ? stackLevel(count) : g ? p.stack ?? 0 : stackLevel(dealt);   // others: only how thick it looks
+    const hasCards = layers > 0;
     const current = g?.phase === 'playing' && g.turn === i;
     const canFlip = mine && current && count > 0;
     const tag = mine ? 'button' : 'div';
     const flip = activeFlips.get(p.id), flying = flip && Date.now() - flip.startedAt < 520;
-    const status = !g ? p.ready ? '준비 완료' : '준비중'
-      : p.status === 'out' ? '탈락'
-      : mine ? `내 카드 <strong>${count}</strong>장`
-      : p.status === 'recovering' ? '종으로 복귀 가능' : '';
-    return `<div class="seat ${mine ? 'mine' : ''} ${current ? 'current' : ''} ${p.status === 'out' ? 'out' : ''} ${activeCollection?.winnerId === p.id ? 'collection-winner' : ''}" style="--x:${x}%;--y:${y}%;--radial-x:${dx};--radial-y:${dy};--seat-rotation:${rotation}deg;--name-bg:${NAME_COLORS[color % NAME_COLORS.length]};--label-factor:${Math.abs(dy)};--mobile-label-y:${dy < -.5 ? '-82px' : `calc(${Math.abs(dy)} * 27px + 31px)`}" data-seat="${p.id}" data-x="${x}" data-y="${y}" data-dx="${dx}" data-dy="${dy}" data-rotation="${rotation}"><div class="seat-piles"><${tag} class="hidden-deck card-stack ${hasCards ? 'card-back' : 'empty-deck'}" style="${stackStyle(mine ? count : hasCards ? OTHER_DECK : 0)}" ${mine ? `type="button" data-do="flip" ${canFlip ? '' : 'disabled'} aria-label="내 비공개 카드 ${count}장${canFlip ? ', 눌러서 뒤집기' : ''}"` : `role="img" aria-label="${escape(p.nickname)} 비공개 카드"`}><span class="deck-pattern" aria-hidden="true"></span></${tag}>${flying ? pileMarkup(p, flip.before, flip.beforeCount) : pileMarkup(p)}${flipMarkup(p.id)}</div><div class="seat-name">${current ? '<span class="turn-tag">차례</span>' : ''}${seat + 1}. ${escape(p.nickname)}${mine ? ' <span class="me">나</span>' : ''}</div><div class="seat-status">${status}</div></div>`;
+    const tagStatus = !g ? p.ready ? '준비 완료' : '준비중' : p.status === 'out' ? '탈락' : p.status === 'recovering' && !mine ? '종으로 복귀 가능' : '';
+    const status = g && mine && p.status !== 'out' ? `내 카드 <strong>${count}</strong>장` : '';
+    const label = labelTurn(rotation);
+    return `<div class="seat ${mine ? 'mine' : ''} ${current ? 'current' : ''} ${p.status === 'out' ? 'out' : ''} ${activeCollection?.winnerId === p.id ? 'collection-winner' : ''}" style="--x:${x}%;--y:${y}%;--radial-x:${dx};--radial-y:${dy};--seat-rotation:${rotation}deg;--name-bg:${NAME_COLORS[color % NAME_COLORS.length]};--label-angle:${label.angle}deg" data-seat="${p.id}" data-x="${x}" data-y="${y}" data-dx="${dx}" data-dy="${dy}" data-rotation="${rotation}"><div class="seat-piles"><${tag} class="hidden-deck card-stack ${hasCards ? 'card-back' : 'empty-deck'}" style="${layerStyle(layers)}" ${mine ? `type="button" data-do="flip" ${canFlip ? '' : 'disabled'} aria-label="내 비공개 카드 ${count}장${canFlip ? ', 누르고 있다가 떼면 뒤집기' : ''}"` : `role="img" aria-label="${escape(p.nickname)} 비공개 카드"`}><span class="deck-pattern" aria-hidden="true"></span></${tag}>${liftMarkup(p, mine)}${flying ? pileMarkup(p, flip.before, flip.beforeCount) : pileMarkup(p)}${flipMarkup(p.id)}</div><div class="seat-label${label.out < 0 ? ' flipped' : ''}"><div class="seat-name">${current ? '<span class="turn-tag">차례</span>' : ''}${seat + 1}. ${escape(p.nickname)}${mine ? ' <span class="me">나</span>' : ''}${tagStatus ? ` <span class="tag-status">${tagStatus}</span>` : ''}</div>${status ? `<div class="seat-status">${status}</div>` : ''}</div></div>`;
   }).join('');
 }
 // The hand of whoever hit the bell first, in their colour: it slaps down on the bell, then fades away.
@@ -263,6 +329,28 @@ function playTurnArrow() {
   }
   lastTurnAngle = angle;
 }
+// The held top card (mine while I press my deck; others' from the server), and one going back down.
+function liftMarkup(p, mine) {
+  const lift = lifts.get(p.id);
+  const held = mine ? !!myHold : !!p.holding;
+  if (held) return `<div class="lift-card card-back" data-lift="${escape(p.id)}" aria-hidden="true"><span class="deck-pattern"></span></div>`;
+  if (lift?.down && Date.now() - lift.startedAt < LIFT_MS) return `<div class="lift-card card-back is-down" data-lift="${escape(p.id)}" aria-hidden="true"><span class="deck-pattern"></span></div>`;
+  return '';
+}
+function playLifts() {
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const el of document.querySelectorAll('.lift-card')) {
+    const id = el.dataset.lift, lift = lifts.get(id), seat = el.closest('.seat');
+    if (!lift || still) continue;
+    const elapsed = Date.now() - lift.startedAt;
+    if (elapsed >= LIFT_MS) { if (lift.down) el.remove(); continue; }
+    const style = getComputedStyle(seat);
+    const frames = liftKeyframes({ dx: +seat.dataset.dx, dy: +seat.dataset.dy, rotation: +seat.dataset.rotation }, parseFloat(style.getPropertyValue('--pile-offset')), parseFloat(style.getPropertyValue('--deck-scale')));
+    const animation = el.animate(lift.down ? frames.reverse() : frames, { duration: LIFT_MS, delay: -elapsed, easing: lift.down ? 'cubic-bezier(.4,0,.7,.4)' : 'cubic-bezier(.2,.8,.3,1)', fill: 'both' });
+    if (lift.down) animation.finished.then(() => el.remove()).catch(() => {});
+  }
+}
+function liftStart(id, down) { lifts.set(id, { startedAt: Date.now(), down }); }
 function flipMarkup(playerId) {
   const flip = activeFlips.get(playerId);
   if (!flip || Date.now() - flip.startedAt > 520) return '';
@@ -274,8 +362,8 @@ function playCardFlips() {
     const seat = element.closest('.seat'), id = element.dataset.flip, flip = activeFlips.get(id);
     if (!flip) continue;
     const elapsed = Date.now() - flip.startedAt;
-    const offset = parseFloat(getComputedStyle(seat).getPropertyValue('--pile-offset'));
-    const frames = flipKeyframes({ dx: Number(seat.dataset.dx), dy: Number(seat.dataset.dy), rotation: Number(seat.dataset.rotation) }, offset);
+    const style = getComputedStyle(seat), offset = parseFloat(style.getPropertyValue('--pile-offset'));
+    const frames = flipKeyframes({ dx: Number(seat.dataset.dx), dy: Number(seat.dataset.dy), rotation: Number(seat.dataset.rotation) }, offset, flip.lifted, parseFloat(style.getPropertyValue('--deck-scale')));
     const animation = element.animate(frames, { duration: 520, delay: -elapsed, easing: 'cubic-bezier(.35,.05,.3,1)', fill: 'both' });
     animation.finished.then(() => {
       // (a page redraw during the flight leaves an older copy of this flight off the page; it can finish first)
@@ -331,25 +419,25 @@ function playCollections() {
 }
 function waitingOverlay() {
   const r = state.room, g = r.game;
-  if (!g) return `<div class="waiting-overlay"><h2>게임 준비</h2><p>모두 준비를 마치면 게임이 시작돼요.<br>${r.players.length < 2 ? '친구를 초대하거나 테스트 봇을 추가해보세요.' : `${r.players.filter(p => p.ready).length} / ${r.players.length}명 준비 완료`}</p><span class="pill">${endingLabel(r.settings.ending)}</span></div>`;
+  if (!g) return `<div class="waiting-overlay"><h2>게임 준비</h2><p>${r.players.length < 2 ? '2명부터 시작할 수 있어요' : `준비 ${r.players.filter(p => p.ready).length} / ${r.players.length}`}</p><span class="pill">${endingLabel(r.settings.ending)}</span></div>`;
   if (g.phase === 'spinning') {
     // each slice has the player's own colour (the same as their name tag), the name sits in the middle of the slice,
     // and the wheel stops with the middle of the starter's slice under the pointer
     const slice = 360 / g.players.length;
     const colors = g.players.map((p, i) => NAME_COLORS[(p.color ?? p.seat ?? i) % NAME_COLORS.length]);
-    return `<div class="waiting-overlay"><span class="eyebrow">WHO GOES FIRST?</span><h2>첫 주인공을 뽑아요!</h2><div class="wheel-pointer">▼</div><div class="wheel${g.players.length <= 4 ? ' few' : ''}" style="--stop:${1440 - (g.starter + .5) * slice}deg;animation-delay:-${Math.max(0, Date.now() + offset - g.createdAt)}ms;background:conic-gradient(${colors.map((c, i) => `${c} ${i * slice}deg ${(i + 1) * slice}deg`).join(',')})">${g.players.length > 1 ? g.players.map((p, i) => `<i class="wheel-line" style="--angle:${i * slice}deg"></i>`).join('') : ''}${g.players.map((p, i) => `<span style="--angle:${(i + .5) * slice}deg">${escape(p.nickname)}</span>`).join('')}</div><p>선택된 플레이어부터 시계방향으로!</p></div>`;
+    return `<div class="waiting-overlay"><h2>첫 차례</h2><div class="wheel-pointer">▼</div><div class="wheel${g.players.length <= 4 ? ' few' : ''}" style="--stop:${1440 - (g.starter + .5) * slice}deg;animation-delay:-${Math.max(0, Date.now() + offset - g.createdAt)}ms;background:conic-gradient(${colors.map((c, i) => `${c} ${i * slice}deg ${(i + 1) * slice}deg`).join(',')})">${g.players.length > 1 ? g.players.map((p, i) => `<i class="wheel-line" style="--angle:${i * slice}deg"></i>`).join('') : ''}${g.players.map((p, i) => `<span style="--angle:${(i + .5) * slice}deg">${escape(p.nickname)}</span>`).join('')}</div></div>`;
   }
   return '';
 }
 function resultsOverlay() {
   const g = state.room.game;
   if (g?.phase !== 'finished' || (activeCollection && Date.now() - activeCollection.startedAt < 1500)) return '';
-  return `<div class="results-overlay"><section class="results-panel" aria-label="게임 결과"><span class="eyebrow">${g.draw ? 'A FRIENDLY DRAW' : 'THAT WAS A GOOD GAME'}</span><h2>${g.draw ? '이번 판은 무승부예요' : `${escape(g.results.filter(p => p.winner).map(p => p.nickname).join(', '))}님 우승!`}</h2><p>${g.draw ? escape(g.notice) : '좋은 한 판이었어요. 한 번 더 할까요?'}</p><div class="result-list">${g.results.map(p => `<div class="result-row"><span>${p.rank}</span><strong>${escape(p.nickname)}</strong><small>정답 ${p.hits} · 오답 ${p.misses}</small><span>${p.cards}장</span></div>`).join('')}</div><p>${state.debug ? '디버그 경기 · 랭킹에 반영되지 않아요' : '경기 결과가 저장되었어요'}</p><button class="button primary wide" data-do="ready">다시 준비하기 ${icon('arrow')}</button><button class="text-button" data-do="leave">로비로 돌아가기</button></section></div>`;
+  return `<div class="results-overlay"><section class="results-panel" aria-label="게임 결과"><h2>${g.draw ? '이번 판은 무승부예요' : `${escape(g.results.filter(p => p.winner).map(p => p.nickname).join(', '))}님 우승!`}</h2>${g.draw ? `<p>${escape(g.notice)}</p>` : ''}<div class="result-list">${g.results.map(p => `<div class="result-row"><span>${p.rank}</span><strong>${escape(p.nickname)}</strong><small>정답 ${p.hits} · 오답 ${p.misses}</small><span>${p.cards}장</span></div>`).join('')}</div><p>${state.debug ? '디버그 · 기록 안 함' : '기록 저장됨'}</p><button class="button primary wide" data-do="ready">다시 하기 ${icon('arrow')}</button><button class="text-button" data-do="leave">로비로</button></section></div>`;
 }
 function gamePage() {
   const r = state.room, g = r.game, me = g?.players.find(p => p.id === state.me.id), waiting = !g;
   const canRing = g?.phase === 'playing' && me && me.status !== 'out';
-  return `<div class="app-shell">${header()}<main id="main"><div class="room-top"><div><h1>${escape(r.name)}</h1><div class="room-tags"><span>${r.settings.mode === 'original' ? '원본 56장' : `한 명당 ${r.settings.cards}장`}</span><span>${endingLabel(r.settings.ending)}</span><span>${r.players.length}/${r.settings.max}명</span></div></div><button class="button secondary" data-do="leave">나가기 ${icon('logout')}</button></div><div class="game-layout">${chatPanel('room')}<section class="glass game-center" aria-label="게임판"><div class="table-meta"><div class="game-status">${g?.phase === 'playing' ? `<span class="pill"><i class="dot"></i>${g.turn >= 0 ? `${g.players[g.turn].id === state.me.id ? '내' : `${escape(g.players[g.turn].nickname)}님`} 차례` : '종 판정 대기'}</span><br><span id="turn-timer"></span>` : '<span class="pill">준비 시간</span>'}</div></div><div class="table-stage"><div class="game-table"><div class="table-ring"></div>${turnArrow()}${seats()}${collectionMarkup()}${ringMarkup()}<button class="bell-control" data-do="ring" ${canRing ? '' : 'disabled'} aria-label="종 누르기, 스페이스 키">${bellArt()}</button></div></div>${waitingOverlay()}${g?.phase === 'announcing' ? `<div class="start-popup" role="status">${escape(g.players[g.starter].nickname)}님부터 시작합니다!</div>` : ''}<div class="game-controls"><p class="notice-bar" role="status">${escape(g?.notice ?? '모두 준비가 되면 시작 플레이어를 뽑아요.')}</p><div class="controls-right"><button class="button secondary" data-do="rules" aria-label="게임 방법">${icon('help')}</button>${waiting ? `<button class="button primary ready-action ${r.players.find(p => p.id === state.me.id).ready ? 'is-ready' : ''}" data-do="ready" aria-pressed="${r.players.find(p => p.id === state.me.id).ready}">${r.players.find(p => p.id === state.me.id).ready ? '준비 취소' : '준비 완료'}</button>` : ''}</div></div>${resultsOverlay()}</section>${presencePanel(true)}</div></main>${footer()}</div>`;
+  return `<div class="app-shell">${header()}<main id="main"><div class="room-top"><div><h1>${escape(r.name)}</h1><div class="room-tags"><span>${r.settings.mode === 'original' ? '원본 56장' : `한 명당 ${r.settings.cards}장`}</span><span>${endingLabel(r.settings.ending)}</span><span>${r.players.length}/${r.settings.max}명</span></div></div><button class="button secondary" data-do="leave">나가기 ${icon('logout')}</button></div><div class="game-layout">${chatPanel('room')}<section class="glass game-center" aria-label="게임판"><div class="table-meta"><div class="game-status">${g?.phase === 'playing' ? `<span class="pill"><i class="dot"></i>${g.turn >= 0 ? `${g.players[g.turn].id === state.me.id ? '내' : `${escape(g.players[g.turn].nickname)}님`} 차례` : '종 판정 대기'}</span><br><span id="turn-timer"></span>` : '<span class="pill">준비 시간</span>'}</div></div><div class="table-stage"><div class="game-table"><div class="table-ring"></div>${turnArrow()}${seats()}${collectionMarkup()}${ringMarkup()}<button class="bell-control" data-do="ring" ${canRing ? '' : 'disabled'} aria-label="종 누르기, 스페이스 키">${bellArt()}</button></div></div>${waitingOverlay()}${g?.phase === 'announcing' ? `<div class="start-popup" role="status">${escape(g.players[g.starter].nickname)}님부터</div>` : ''}<div class="game-controls"><p class="notice-bar" role="status">${escape(g?.notice ?? '모두 준비하면 시작해요')}</p><div class="controls-right"><button class="button secondary" data-do="rules" aria-label="게임 방법">${icon('help')}</button>${waiting ? `<button class="button primary ready-action ${r.players.find(p => p.id === state.me.id).ready ? 'is-ready' : ''}" data-do="ready" aria-pressed="${r.players.find(p => p.id === state.me.id).ready}">${r.players.find(p => p.id === state.me.id).ready ? '준비 취소' : '준비 완료'}</button>` : ''}</div></div>${resultsOverlay()}</section>${presencePanel(true)}</div></main>${footer()}</div>`;
 }
 function render() {
   if (composing) { renderPending = true; return; }
@@ -361,7 +449,7 @@ function render() {
   document.body.classList.toggle('in-game', !!state?.room);
   document.body.classList.toggle('paused', paused);
   app.innerHTML = state ? state.room ? gamePage() : lobbyPage() : authPage();
-  fitTable(); updateConnection(); updateTimer(); playCardFlips(); playCollections(); playTurnArrow(); playRing();
+  fitTable(); updateConnection(); updateTimer(); playCardFlips(); playLifts(); playCollections(); playTurnArrow(); playRing();
   document.querySelectorAll('[data-chat]').forEach(el => { const old = scrolls[el.dataset.chat]; el.scrollTop = old && !old.bottom ? old.top : el.scrollHeight; });
   if (focusedId && document.getElementById(focusedId)) {
     const target = document.getElementById(focusedId); target.focus({ preventScroll: true });
@@ -382,13 +470,13 @@ function fitTable() {
   const phone = matchMedia('(max-width:650px)').matches;
   if (!phone) root.style.setProperty('--fit-h', `${Math.max(420, Math.floor(innerHeight - (layout.getBoundingClientRect().top + scrollY) - 18))}px`);
   const stage = $('.table-stage'); if (!stage) return;
-  const k = phone ? stage.clientWidth / STAGE.phone : Math.min(stage.clientWidth / (STAGE.desk - 20), stage.clientHeight / (STAGE.desk - 30));
+  const k = phone ? stage.clientWidth / STAGE.phone : Math.min(stage.clientWidth / (STAGE.desk - 20), stage.clientHeight / (STAGE.desk + 12));
   root.style.setProperty('--k', String(Math.max(.3, Math.min(1.5, k)).toFixed(4)));
 }
 addEventListener('resize', () => { if (state?.room) fitTable(); });
 function updateTimer() {
   const el = $('#turn-timer'), deadline = state?.room?.game?.deadline;
-  if (el) el.textContent = deadline ? `${Math.max(0, Math.ceil((deadline - Date.now() - offset) / 1000))}초 후 자동 뒤집기` : '뒤집을 카드가 없어 종을 기다려요';
+  if (el) el.textContent = deadline ? `자동 뒤집기 ${Math.max(0, Math.ceil((deadline - Date.now() - offset) / 1000))}초` : '뒤집을 카드 없음';
 }
 setInterval(updateTimer, 250);
 async function command(path, data = {}) {
@@ -416,7 +504,7 @@ document.addEventListener('click', async event => {
     case 'home-login': homeLogin(); break;
     case 'bot': await command('bot'); break;
     case 'ready': await command('ready', { ready: state.room.game?.phase === 'finished' || !state.room.players.find(p => p.id === state.me.id).ready }); break;
-    case 'flip': await action('flip'); break;
+    case 'flip': if (event.detail === 0) await action('flip'); break;   // keyboard; mouse and touch go through press-and-release below
     case 'ring': await action('ring'); break;
     case 'site-home': // 게임 중이면 한 번 묻고, 아니면 그냥 링크대로 이동
       if (state?.room?.game && state.room.game.phase !== 'finished') { event.preventDefault(); leaveToHome = true; leaveLabels('홈페이지로 나갈까요?', '홈페이지로'); $('#leave-dialog').showModal(); }
@@ -459,6 +547,42 @@ document.addEventListener('submit', async event => {
     catch (e) { toast(e.message); submit.disabled = false; }
   }
 });
+// ── press and hold my deck ──
+// Pressing lifts my top card (everyone sees it lifted); letting go on the deck flips it; moving off the deck while
+// pressing puts it back. So a player can pretend to flip and catch someone hitting the bell too early.
+function sendHold(on) {
+  const g = state?.room?.game;
+  if (g) api('hold', { gameId: g.id, on }).catch(() => {});
+}
+function dropHold() {
+  if (!myHold) return;
+  const sent = myHold.sent; myHold = null;
+  liftStart(state.me.id, true); render();
+  if (sent) sendHold(false);
+}
+document.addEventListener('pointerdown', event => {
+  const deck = event.target.closest('.seat.mine .hidden-deck');
+  if (!deck || deck.disabled || myHold || event.button !== 0 || !event.isPrimary) return;
+  event.preventDefault();   // no text selection or drag image; focus stays where it was
+  const box = deck.getBoundingClientRect(), pad = 10;
+  myHold = { startedAt: Date.now(), pointerId: event.pointerId, rect: { left: box.left - pad, right: box.right + pad, top: box.top - pad, bottom: box.bottom + pad }, sent: connected };
+  liftStart(state.me.id, false); render();
+  if (connected) sendHold(true);
+});
+const insideHold = event => { const r = myHold.rect; return event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom; };
+document.addEventListener('pointermove', event => {
+  if (myHold && !myHold.releasing && event.pointerId === myHold.pointerId && !insideHold(event)) dropHold();
+});
+document.addEventListener('pointerup', async event => {
+  if (!myHold || myHold.releasing || event.pointerId !== myHold.pointerId) return;
+  if (!insideHold(event)) return dropHold();
+  const hold = myHold; hold.releasing = true;
+  await action('flip');
+  // the flip did not go through (not my turn any more, offline, too fast): the card goes back
+  if (myHold === hold) dropHold();
+});
+document.addEventListener('pointercancel', event => { if (myHold && !myHold.releasing && event.pointerId === myHold.pointerId) dropHold(); });
+document.addEventListener('contextmenu', event => { if (event.target.closest('.seat.mine .hidden-deck')) event.preventDefault(); });
 document.addEventListener('keydown', event => {
   if (event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.target.closest('input,textarea,select,button,[contenteditable="true"]') || document.querySelector('dialog[open]')) return;
   if (state?.room?.game?.phase !== 'playing') return;

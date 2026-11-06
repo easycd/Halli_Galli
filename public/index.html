@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#fce9c5">
-  <meta name="description" content="종이 울리면, 우리들의 게임이 시작돼요. 최대 8명이 함께하는 온라인 할리갈리.">
-  <title>Halli Galli — 오늘도, 한 판!</title>
+  <meta name="description" content="최대 8명이 함께하는 온라인 할리갈리">
+  <title>할리갈리</title>
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./table.css">
   <script type="module" src="./app.js"></script>
@@ -19,23 +19,23 @@
     <form id="create-form">
       <div class="dialog-head"><button type="button" class="icon-button" data-close aria-label="닫기">×</button></div>
       <h2 id="create-title">방 만들기</h2>
-      <label>방 이름<input name="name" placeholder="과일 좋아하는 사람 모여라!" maxlength="24" required></label>
+      <label>방 이름<input name="name" maxlength="24" required></label>
       <div class="form-row"><label>최대 인원<select name="max"><option value="2">2명</option><option value="3">3명</option><option value="4">4명</option><option value="5">5명</option><option value="6">6명</option><option value="7">7명</option><option value="8" selected>8명</option></select></label><label>카드 모드<select name="mode"><option value="original">원본 · 총 56장</option><option value="custom">커스텀 · 장수 지정</option></select></label></div>
-      <label id="cards-field" hidden>한 사람당 시작 카드 수<input name="cards" type="number" min="5" max="30" value="10"><small>5~30장 · 실제 참가 인원에게 똑같이 나눠요.</small></label>
-      <fieldset><legend>언제 게임을 끝낼까요?</legend>
+      <label id="cards-field" hidden>한 사람당 시작 카드 수<input name="cards" type="number" min="5" max="30" value="10"><small>5~30장</small></label>
+      <fieldset><legend>끝나는 때</legend>
         <label class="radio-card"><input type="radio" name="ending" value="first"><span><strong>첫 탈락이 나올 때</strong><small>남은 비공개 카드가 가장 많은 사람이 우승</small></span></label>
         <label class="radio-card"><input type="radio" name="ending" value="last" checked><span><strong>마지막 한 명이 남을 때</strong><small>끝까지 살아남은 사람이 우승</small></span></label>
       </fieldset>
-      <p class="form-error" role="alert"></p><button class="button primary wide" type="submit">테이블 만들기 <span>↗</span></button>
+      <p class="form-error" role="alert"></p><button class="button primary wide" type="submit">만들기</button>
     </form>
   </dialog>
   <dialog id="rules-dialog" aria-labelledby="rules-title">
-    <div class="dialog-head"><span class="eyebrow">A LITTLE REFRESHER</span><button type="button" class="icon-button" data-close aria-label="닫기">×</button></div>
-    <h2 id="rules-title">딱 다섯 개면, 땡!</h2>
-    <ol class="rules"><li><strong>내 차례에 한 장씩.</strong><p>카드를 뒤집고, 각 플레이어의 맨 위 카드만 확인해요.</p></li><li><strong>같은 과일이 정확히 5개!</strong><p>내 차례가 아니어도 가운데 종을 누르세요. 공개된 모든 카드 더미를 가져와요.</p></li><li><strong>앗, 잘못 눌렀다면?</strong><p>다른 참가자에게 비공개 카드를 한 장씩 줘야 해요.</p></li><li><strong>마지막 한 장에도 기회가 있어요.</strong><p>카드가 0장이 되어도 다음 정답 종을 누르면 복귀해요. 다른 사람이 획득하면 탈락해요.</p></li></ol>
-    <p class="note">종: Space · 카드 뒤집기: Enter<br>채팅 입력 중에는 게임 단축키가 작동하지 않아요.</p>
+    <div class="dialog-head"><span></span><button type="button" class="icon-button" data-close aria-label="닫기">×</button></div>
+    <h2 id="rules-title">게임 방법</h2>
+    <ol class="rules"><li><strong>차례마다 한 장씩 뒤집기</strong><p>각 자리의 맨 위 카드만 셉니다. 내 카드 더미를 누르고 있으면 카드가 들린 채로 있고, 떼면 내요. 누른 채 더미 밖으로 빼면 취소돼요.</p></li><li><strong>같은 과일이 정확히 5개면 종</strong><p>차례와 상관없이 먼저 친 사람이 공개된 카드를 모두 가져가요.</p></li><li><strong>잘못 치면</strong><p>다른 사람에게 카드를 한 장씩 줘요.</p></li><li><strong>카드가 0장이 되면</strong><p>카드가 0장이 되어도 다음 정답 종을 누르면 복귀해요. 다른 사람이 획득하면 탈락해요.</p></li></ol>
+    <p class="note">종: Space · 뒤집기: Enter (채팅 입력 중엔 안 돼요)</p>
   </dialog>
-  <dialog id="leave-dialog" aria-labelledby="leave-title"><h2 id="leave-title">테이블을 나갈까요?</h2><p>나가면 내 카드와 차례는 없어지고, 남은 사람끼리 계속해요.</p><div class="form-row"><button class="button secondary" data-close>계속 플레이</button><button class="button danger" id="confirm-leave">나가기</button></div></dialog>
+  <dialog id="leave-dialog" aria-labelledby="leave-title"><h2 id="leave-title">테이블을 나갈까요?</h2><p>내 카드와 차례는 빠지고, 나머지는 계속해요.</p><div class="form-row"><button class="button secondary" data-close>계속 플레이</button><button class="button danger" id="confirm-leave">나가기</button></div></dialog>
   <dialog id="left-dialog" aria-labelledby="left-title"><h2 id="left-title">상대가 게임에서 나갔어요</h2><p id="left-body"></p><div class="form-row"><button class="button primary" data-close autofocus>확인</button></div></dialog>
 </body>
 </html>
