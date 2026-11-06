@@ -47,6 +47,17 @@ test('homepage login, real room/chat APIs, internal admin API and access boundar
   assert.equal((await request('/api/bot', {}, a.cookie)).status, 400);
   const chat = await request('/api/chat', { channel: 'room', text: '<script>alert(1)</script>' }, a.cookie);
   assert.equal(chat.body.room.messages[0].text, '<script>alert(1)</script>'); assert.equal(chat.body.messages.length, 0);
+  // room chat lines carry the writer's seat colour; the state carries which screen files the server hands out
+  assert.equal(chat.body.room.messages[0].color, chat.body.room.players.find(p => p.id === a.id).color);
+  assert.match(state.body.build, /^[0-9a-f]{12}$/);
+  // the page asks for its scripts and styles by build, so no cache can serve an old screen after an update
+  const page = await fetch(base + '/'); const html = await page.text();
+  assert.equal(page.headers.get('cache-control'), 'no-store');
+  for (const name of ['app.js', 'styles.css', 'table.css']) assert.ok(html.includes(`./${name}?v=${state.body.build}`), name);
+  const script = await fetch(`${base}/app.js?v=${state.body.build}`);
+  assert.ok((await script.text()).includes(`./table-layout.js?v=${state.body.build}`));
+  assert.match(script.headers.get('cache-control'), /immutable/);
+  assert.equal((await fetch(`${base}/table.css`)).headers.get('cache-control'), 'no-cache');
   const b = home.signIn('다른친구');
   assert.equal((await request('/api/join', { roomId: room.body.room.id }, b.cookie)).status, 400);
   assert.equal((await request('/api/state', undefined, b.cookie)).body.room, null);

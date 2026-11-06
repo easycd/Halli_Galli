@@ -1,8 +1,8 @@
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, extname } from 'node:path';
-import { randomUUID, randomInt } from 'node:crypto';
+import { randomUUID, randomInt, createHash } from 'node:crypto';
 import { Accounts } from './auth.js';
 import { createHomeAuth, HomeAuthUnavailable, internalAllowed, readHomeToken } from './homeAuth.js';
 import { Game } from './game.js';
@@ -10,10 +10,21 @@ import { Game } from './game.js';
 /** 게임을 올릴 주소 경로. 예: BASE_PATH=/haligali → https://도메인/haligali/ . 없으면 맨 앞(/) */
 export const basePath = (value = process.env.BASE_PATH ?? '/') => `/${String(value).replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
 
+/** ./app.js → ./app.js?v=<build> for the screen's own scripts and styles (index.html links, app.js imports). */
+export const versioned = (text, build) => text.replace(/(["'])\.\/(app\.js|styles\.css|table\.css|table-layout\.js)\1/g, (_, q, name) => `${q}./${name}?v=${build}${q}`);
+
+async function screenBuild(root) {
+  const hash = createHash('sha256');
+  for (const name of (await readdir(root)).sort()) hash.update(name).update(await readFile(join(root, name)));
+  return hash.digest('hex').slice(0, 12);
+}
+
 export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLToPath(new URL('../.data/', import.meta.url)), debug = true, base = basePath(), verifySession = createHomeAuth(), internalToken = process.env.INTERNAL_TOKEN ?? '' } = {}) {
   const accounts = new Accounts(dataDir); await accounts.load();
   const streams = new Map(), rooms = new Map(), chats = [], limits = new Map();
   const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
+  // Which screen files this server hands out. A page opened before an update sees a different value and reloads itself.
+  const build = await screenBuild(publicRoot);
   const roomFor = id => [...rooms.values()].find(r => r.players.some(p => p.id === id));
   const online = id => (streams.get(id)?.size ?? 0) > 0;
   const identity = user => ({ id: user.id, nickname: user.nickname });
@@ -23,7 +34,7 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
     game: room.game?.snapshot(viewerId) ?? null,
   });
   const snapshot = user => ({
-    me: accounts.public(user), debug, serverTime: Date.now(),
+    me: accounts.public(user), debug, build, serverTime: Date.now(),
     ranking: accounts.users.filter(u => u.played).map(u => accounts.public(u)).sort((a, b) => b.wins - a.wins || b.wins / b.played - a.wins / a.played || b.played - a.played),
     online: accounts.users.filter(u => online(u.id)).map(u => ({ ...identity(u), status: ['spinning', 'announcing', 'playing'].includes(roomFor(u.id)?.game?.phase) ? '게임중' : '대기중' })),
     rooms: [...rooms.values()].map(r => ({ id: r.id, name: r.name, count: r.players.length, settings: r.settings, phase: r.game?.phase ?? 'waiting' })),
@@ -223,7 +234,9 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
             if (typeof data.text !== 'string' || !data.text.trim() || data.text.length > 200) throw new Error('메시지는 1~200자로 입력해주세요.');
             if (!['global', 'room'].includes(data.channel) || (data.channel === 'room' && !room)) throw new Error('채팅방을 확인해주세요.');
             const list = data.channel === 'room' ? room.messages : chats;
-            list.push({ id: randomUUID(), nickname: user.nickname, text: data.text.trim(), at: Date.now() });
+            // room chat carries the writer's seat colour, so each line shows in that player's colour
+            const color = data.channel === 'room' ? room.players.find(p => p.id === user.id)?.color : undefined;
+            list.push({ id: randomUUID(), nickname: user.nickname, text: data.text.trim(), at: Date.now(), ...(Number.isInteger(color) ? { color } : {}) });
             if (list.length > 100) list.shift(); break;
           }
           default: return json(404, { error: '요청을 찾을 수 없어요.' });
@@ -234,8 +247,12 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
       const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/table.css': 'table.css', '/table-layout.js': 'table-layout.js', '/fruit.svg': 'fruit.svg', '/login-art.svg': 'login-art.svg', '/silver-bell.svg': 'silver-bell.svg' };
       const file = files[url.pathname];
       if (!file) { res.writeHead(404); return res.end('Not found'); }
-      const content = await readFile(join(publicRoot, file));
-      res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' })[extname(file)], 'Cache-Control': 'no-cache' });
+      let content = await readFile(join(publicRoot, file));
+      // Every screen file is asked for with ?v=<build>. A cache in between (the browser, or a Cloudflare
+      // "Browser Cache TTL" that overrides no-cache) then cannot hand out an old app.js after an update.
+      if (file === 'index.html' || file === 'app.js') content = Buffer.from(versioned(content.toString('utf8'), build));
+      const cache = file === 'index.html' ? 'no-store' : url.searchParams.get('v') === build ? 'public, max-age=31536000, immutable' : 'no-cache';
+      res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' })[extname(file)], 'Cache-Control': cache });
       res.end(content);
     } catch (error) {
       if (!res.headersSent) json(400, { error: error.message });
