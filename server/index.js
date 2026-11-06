@@ -86,9 +86,15 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
   /** Homepage admin dashboard → GET (record), PUT { nickname }, DELETE. Shared secret, local only, never via the tunnel. */
   async function internal(req, res, url, json) {
     if (!internalAllowed(req.headers, internalToken)) return json(404, { error: 'not found' });
-    const match = /^\/internal\/users\/([A-Za-z0-9_-]{1,64})$/.exec(url.pathname);
+    const match = /^\/internal\/users\/([A-Za-z0-9_-]{1,64})(\/logout)?$/.exec(url.pathname);
     if (!match) return json(404, { error: 'not found' });
     const id = match[1];
+    if (match[2]) {
+      // Signed out on the homepage by the admin (forced logout or new password) → close the live streams now.
+      if (req.method !== 'POST') return json(405, { error: 'method not allowed' });
+      verifySession.forget?.(id); kick(id);
+      return json(200, { ok: true });
+    }
     if (req.method === 'GET') { const user = accounts.find(id); return json(200, { ok: true, record: user ? accounts.public(user) : null }); }
     if (req.method === 'PUT') {
       const data = await body(req);

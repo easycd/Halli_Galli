@@ -67,6 +67,15 @@ test('homepage login, real room/chat APIs, internal admin API and access boundar
   home.members.get(a.token).nickname = '새이름';
   const after = await request('/api/state', undefined, a.cookie);
   assert.equal(after.body.me.nickname, '새이름'); assert.equal(after.body.room.players[0].nickname, '새이름');
+  // Forced logout from the admin page: live stream closes with signedOut right away.
+  const b2 = await fetch(base + '/api/events', { headers: { Cookie: b.cookie } });
+  const r2 = b2.body.getReader();
+  assert.equal((await request(`/internal/users/${b.id}/logout`, undefined, null, secret)).status, 405);
+  assert.equal((await request(`/internal/users/${b.id}/logout`, {}, null, { 'X-Internal-Token': 'nope' })).status, 404);
+  assert.equal((await request(`/internal/users/${b.id}/logout`, {}, null, secret)).status, 200);
+  let t2 = ''; const d2 = new TextDecoder();
+  while (true) { const { value, done } = await r2.read(); if (done) break; t2 += d2.decode(value); }
+  assert.match(t2, /event: signedOut/);
   // Delete: live stream gets signedOut, record and room seat disappear.
   const events = await fetch(base + '/api/events', { headers: { Cookie: a.cookie } });
   const reader = events.body.getReader();
