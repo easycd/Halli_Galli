@@ -21,6 +21,7 @@ const paths = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   spark: '<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
 };
 function icon(name) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.spark}</svg>`; }
 const bellArt = () => '<img src="./silver-bell.svg" alt="" draggable="false">';
@@ -108,9 +109,13 @@ function chime() {
     });
   } catch { /* Audio is optional. */ }
 }
+// 왼쪽 위: 홈페이지(JAEWON 메인)로 돌아가기
+let leaveToHome = false;
+function leaveLabels(title, button) { $('#leave-title').textContent = title; $('#confirm-leave').textContent = button; }
+function siteHome() { return `<a class="icon-button site-home" href="${HOME}" data-do="site-home" aria-label="홈페이지로 돌아가기" title="홈페이지로">${icon('home')}</a>`; }
 function brand() { return `<a class="brand" href="./" aria-label="할리갈리 홈"><span class="brand-mark">${icon('bell')}</span><span class="brand-name">halli<span>galli.</span></span></a>`; }
 function header(auth = false) {
-  return `<header class="topbar">${brand()}<nav class="top-actions" aria-label="설정"><button class="text-button" data-do="rules" aria-label="게임 방법">${icon('help')}<span>게임 방법</span></button><button class="text-button" data-do="motion" aria-label="배경 애니메이션 ${paused ? '재생' : '일시정지'}">${icon(paused ? 'play' : 'pause')}<span>${paused ? '배경 재생' : '배경 멈추기'}</span></button>${auth ? '' : `<button class="text-button" data-do="sound" aria-label="소리 ${sound ? '끄기' : '켜기'}" aria-pressed="${sound}"><span>소리 ${sound ? '켜짐' : '꺼짐'}</span>${icon('bell')}</button><div class="profile"><span class="avatar c1">${escape(state.me.nickname[0])}</span><strong>${escape(state.me.nickname)}</strong><button class="text-button" data-do="logout" aria-label="로그아웃">${icon('logout')}</button></div>`}</nav></header>`;
+  return `<header class="topbar"><div class="header-left">${siteHome()}${brand()}</div><nav class="top-actions" aria-label="설정"><button class="text-button" data-do="rules" aria-label="게임 방법">${icon('help')}<span>게임 방법</span></button><button class="text-button" data-do="motion" aria-label="배경 애니메이션 ${paused ? '재생' : '일시정지'}">${icon(paused ? 'play' : 'pause')}<span>${paused ? '배경 재생' : '배경 멈추기'}</span></button>${auth ? '' : `<button class="text-button" data-do="sound" aria-label="소리 ${sound ? '끄기' : '켜기'}" aria-pressed="${sound}"><span>소리 ${sound ? '켜짐' : '꺼짐'}</span>${icon('bell')}</button><div class="profile"><span class="avatar c1">${escape(state.me.nickname[0])}</span><strong>${escape(state.me.nickname)}</strong><button class="text-button" data-do="logout" aria-label="로그아웃">${icon('logout')}</button></div>`}</nav></header>`;
 }
 function footer(auth = false) { if (auth) return ''; return `<footer class="page-foot"><span class="runtime-badge">${state.debug ? 'DEBUG · 기록 미반영' : 'ONLINE'}</span><span class="connection"><i class="dot"></i>서버 연결됨</span></footer>`; }
 function authPage() {
@@ -301,6 +306,9 @@ document.addEventListener('click', async event => {
     case 'ready': await command('ready', { ready: state.room.game?.phase === 'finished' || !state.room.players.find(p => p.id === state.me.id).ready }); break;
     case 'flip': await action('flip'); break;
     case 'ring': await action('ring'); break;
+    case 'site-home': // 게임 중이면 한 번 묻고, 아니면 그냥 링크대로 이동
+      if (state?.room?.game && state.room.game.phase !== 'finished') { event.preventDefault(); leaveToHome = true; leaveLabels('홈페이지로 나갈까요?', '홈페이지로'); $('#leave-dialog').showModal(); }
+      break;
     case 'leave': if (state.room.game && state.room.game.phase !== 'finished') $('#leave-dialog').showModal(); else await command('leave'); break;
     case 'logout':
       if (state.room?.game && state.room.game.phase !== 'finished') { toast('진행 중인 방을 나간 후 로그아웃해주세요.'); break; }
@@ -311,7 +319,8 @@ document.addEventListener('click', async event => {
       } catch (e) { toast(e.message.startsWith('로그아웃') ? e.message : '로그아웃하지 못했어요. 잠시 후 다시 시도해주세요.'); } break;
   }
 });
-$('#confirm-leave').addEventListener('click', async () => { $('#leave-dialog').close(); await command('leave'); });
+$('#confirm-leave').addEventListener('click', async () => { const toHome = leaveToHome; $('#leave-dialog').close(); await command('leave'); if (toHome) location.assign(HOME); });
+$('#leave-dialog').addEventListener('close', () => { leaveToHome = false; leaveLabels('테이블을 나갈까요?', '나가기'); });
 document.addEventListener('input', event => { const input = event.target; if (input.closest('.chat-form')) drafts[input.closest('form').dataset.channel] = input.value; });
 document.addEventListener('compositionstart', () => { composing = true; });
 document.addEventListener('compositionend', event => {
