@@ -24,7 +24,7 @@ const paths = {
 };
 function icon(name) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.spark}</svg>`; }
 const bellArt = () => '<img src="./silver-bell.svg" alt="" draggable="false">';
-let state = null, stream, authMode = 'login', busy = false, connected = true, offset = 0;
+let state = null, stream, gate = 'checking', busy = false, connected = true, offset = 0;
 let paused = localStorage.getItem('hg-paused') === 'yes';
 let sound = localStorage.getItem('hg-sound') === 'yes';
 let audioContext, lastNotice, toastTimer, lastRoom = null, lastPhase, composing = false, renderPending = false;
@@ -43,12 +43,19 @@ function toast(message) {
   clearTimeout(toastTimer); $('#toast').textContent = message; $('#toast').classList.add('visible');
   toastTimer = setTimeout(() => $('#toast').classList.remove('visible'), 3500);
 }
+// Login is on the homepage (wodnjs.com). Signed-out visitors go there and come back here afterwards.
+const HOME = '/';
+function homeLogin() {
+  stream?.close(); state = null;
+  location.assign(`${HOME}?login=1&next=${encodeURIComponent(location.pathname + location.search)}`);
+}
 async function api(path, data) {
   const response = await fetch(`./api/${path}`, data === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-  const result = await response.json();
+  const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401 && state) { stream?.close(); state = null; render(); }
-    throw new Error(result.error ?? '서버에 연결할 수 없어요.');
+    if (response.status === 401) homeLogin();
+    const error = new Error(result.error ?? '서버에 연결할 수 없어요.'); error.status = response.status;
+    throw error;
   }
   return result;
 }
@@ -80,12 +87,13 @@ function accept(next) {
 function connect() {
   stream?.close(); stream = new EventSource('./api/events');
   stream.onmessage = event => { connected = true; accept(JSON.parse(event.data)); };
+  stream.addEventListener('signedOut', () => homeLogin());
   stream.onopen = () => { connected = true; updateConnection(); };
   stream.onerror = () => { connected = false; updateConnection(); };
 }
 function updateConnection() {
   document.querySelectorAll('.connection').forEach(el => {
-    el.classList.toggle('offline', !connected); el.innerHTML = `<i class="dot"></i>${connected ? '서버 연결됨' : '재연결 중 · 서버 재시작 시 다시 로그인'}`;
+    el.classList.toggle('offline', !connected); el.innerHTML = `<i class="dot"></i>${connected ? '서버 연결됨' : '재연결 중'}`;
   });
 }
 function chime() {
@@ -106,7 +114,12 @@ function header(auth = false) {
 }
 function footer(auth = false) { if (auth) return ''; return `<footer class="page-foot"><span class="runtime-badge">${state.debug ? 'DEBUG · 기록 미반영' : 'ONLINE'}</span><span class="connection"><i class="dot"></i>서버 연결됨</span></footer>`; }
 function authPage() {
-  return `<div class="auth-header">${header(true)}</div><main id="main" class="auth-layout"><section class="auth-visual" aria-label="할리갈리 과일 카드와 종 일러스트"><h1 class="sr-only">할리갈리 로그인</h1><img src="./login-art.svg" width="620" height="580" alt="딸기, 바나나, 라임 카드와 황금색 종으로 꾸민 할리갈리 테이블"></section><section class="glass auth-panel" aria-labelledby="auth-title"><h2 id="auth-title" class="sr-only">${authMode === 'login' ? '로그인' : '회원가입'}</h2><div class="auth-tabs" role="group" aria-label="로그인 또는 회원가입"><button class="auth-tab ${authMode === 'login' ? 'active' : ''}" data-auth="login" aria-pressed="${authMode === 'login'}">로그인</button><button class="auth-tab ${authMode === 'register' ? 'active' : ''}" data-auth="register" aria-pressed="${authMode === 'register'}">회원가입</button></div><form id="auth-form"><label for="nickname">닉네임<input id="nickname" name="nickname" required minlength="2" maxlength="12" autocomplete="username" placeholder="닉네임 입력" aria-describedby="nickname-hint"><small id="nickname-hint">한글·영문·숫자·밑줄·하이픈, 2~12자</small></label><label for="password">비밀번호<div class="password-wrap"><input id="password" name="password" type="password" required minlength="8" maxlength="128" autocomplete="${authMode === 'login' ? 'current-password' : 'new-password'}" placeholder="8자 이상 입력해주세요"><button type="button" class="password-toggle" data-do="password" aria-label="비밀번호 보기" aria-pressed="false">${icon('eye')}</button></div></label><p class="form-error" role="alert" id="auth-error"></p><button type="submit" class="button primary wide">${authMode === 'login' ? '로그인' : '회원가입'} ${icon('arrow')}</button></form></section></main><div class="app-shell">${footer(true)}</div>`;
+  const text = gate === 'offline'
+    ? { title: '로그인 서버에 연결할 수 없어요', body: '잠시 후 다시 시도해주세요.', button: `<button type="button" class="button primary wide" data-do="retry">다시 시도 ${icon('arrow')}</button>` }
+    : gate === 'signedout'
+      ? { title: '로그인이 필요해요', body: '할리갈리는 wodnjs.com 홈페이지 계정으로 들어와요.', button: `<button type="button" class="button primary wide" data-do="home-login">홈페이지에서 로그인 ${icon('arrow')}</button>` }
+      : { title: '로그인 확인 중…', body: '잠시만 기다려주세요.', button: '' };
+  return `<div class="auth-header">${header(true)}</div><main id="main" class="auth-layout"><section class="auth-visual" aria-label="할리갈리 과일 카드와 종 일러스트"><h1 class="sr-only">할리갈리</h1><img src="./login-art.svg" width="620" height="580" alt="딸기, 바나나, 라임 카드와 황금색 종으로 꾸민 할리갈리 테이블"></section><section class="glass auth-panel" aria-labelledby="auth-title" aria-live="polite"><h2 id="auth-title">${text.title}</h2><p>${text.body}</p><div class="auth-actions">${text.button}</div></section></main><div class="app-shell">${footer(true)}</div>`;
 }
 function avatar(name, index = 0) { return `<span class="avatar c${index % 4}">${escape(name[0])}</span>`; }
 function leaderboard() {
@@ -274,8 +287,6 @@ function action(type) {
   return command('action', { gameId: g.id, action: type, actionId: crypto.randomUUID(), version: g.version });
 }
 document.addEventListener('click', async event => {
-  const authTab = event.target.closest('[data-auth]');
-  if (authTab) { authMode = authTab.dataset.auth; render(); return; }
   const close = event.target.closest('[data-close]'); if (close) { close.closest('dialog').close(); return; }
   const join = event.target.closest('[data-join]'); if (join) { await command('join', { roomId: join.dataset.join }); return; }
   const button = event.target.closest('[data-do]'); if (!button || button.disabled) return;
@@ -284,7 +295,8 @@ document.addEventListener('click', async event => {
     case 'create': $('#create-dialog').showModal(); break;
     case 'motion': paused = !paused; localStorage.setItem('hg-paused', paused ? 'yes' : 'no'); render(); break;
     case 'sound': sound = !sound; localStorage.setItem('hg-sound', sound ? 'yes' : 'no'); if (sound) chime(); render(); break;
-    case 'password': { const input = $('#password'); const show = input.type === 'password'; input.type = show ? 'text' : 'password'; button.setAttribute('aria-pressed', String(show)); button.setAttribute('aria-label', show ? '비밀번호 숨기기' : '비밀번호 보기'); break; }
+    case 'retry': start(); break;
+    case 'home-login': homeLogin(); break;
     case 'bot': await command('bot'); break;
     case 'ready': await command('ready', { ready: state.room.game?.phase === 'finished' || !state.room.players.find(p => p.id === state.me.id).ready }); break;
     case 'flip': await action('flip'); break;
@@ -292,7 +304,11 @@ document.addEventListener('click', async event => {
     case 'leave': if (state.room.game && state.room.game.phase !== 'finished') $('#leave-dialog').showModal(); else await command('leave'); break;
     case 'logout':
       if (state.room?.game && state.room.game.phase !== 'finished') { toast('진행 중인 방을 나간 후 로그아웃해주세요.'); break; }
-      try { await api('logout', {}); stream?.close(); state = null; render(); } catch (e) { toast(e.message); } break;
+      try {
+        const response = await fetch(`${HOME}api/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        if (!response.ok && response.status !== 401) throw new Error('로그아웃하지 못했어요. 잠시 후 다시 시도해주세요.');
+        stream?.close(); state = null; location.assign(HOME);
+      } catch (e) { toast(e.message.startsWith('로그아웃') ? e.message : '로그아웃하지 못했어요. 잠시 후 다시 시도해주세요.'); } break;
   }
 });
 $('#confirm-leave').addEventListener('click', async () => { $('#leave-dialog').close(); await command('leave'); });
@@ -307,11 +323,7 @@ document.addEventListener('compositionend', event => {
 $('#create-form').elements.mode.addEventListener('change', event => { $('#cards-field').hidden = event.target.value !== 'custom'; });
 document.addEventListener('submit', async event => {
   const form = event.target; event.preventDefault();
-  if (form.id === 'auth-form') {
-    const submit = $('button[type=submit]', form); submit.disabled = true; submit.textContent = '잠시만 기다려주세요…';
-    try { const result = await api(authMode, Object.fromEntries(new FormData(form))); accept(result); connect(); }
-    catch (e) { $('#auth-error').textContent = e.message; submit.disabled = false; submit.textContent = authMode === 'login' ? '로그인' : '회원가입'; }
-  } else if (form.id === 'create-form') {
+  if (form.id === 'create-form') {
     const submit = $('button[type=submit]', form); submit.disabled = true;
     const raw = Object.fromEntries(new FormData(form));
     try {
@@ -334,4 +346,9 @@ document.addEventListener('keydown', event => {
 });
 background();
 render();
-try { const initial = await api('state'); accept(initial); connect(); } catch { /* first visit */ }
+async function start() {
+  gate = 'checking'; render();
+  try { const initial = await api('state'); accept(initial); connect(); }
+  catch (e) { gate = e.status === 401 ? 'signedout' : 'offline'; render(); }
+}
+start();

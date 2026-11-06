@@ -4,44 +4,89 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../server/index.js';
+import { readHomeToken } from '../server/homeAuth.js';
 
-test('auth, cookie sessions, real room/chat APIs and access boundaries', async t => {
+/** Stand-in for the homepage login server: token → member. */
+function fakeHome() {
+  const members = new Map();
+  const verifySession = async cookie => members.get(readHomeToken(cookie)) ?? null;
+  verifySession.forget = () => {};
+  let n = 0;
+  const signIn = (nickname, id = `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`) => {
+    const token = String(n).padStart(2, '0').repeat(32);
+    members.set(token, { id, name: `이름${n}`, nickname });
+    return { cookie: `wj_session=${token}`, token, id };
+  };
+  return { verifySession, signIn, signOut: token => members.delete(token), members };
+}
+test('homepage login, real room/chat APIs, internal admin API and access boundaries', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'halli-galli-test-'));
-  const app = await createApp({ dataDir: directory });
+  const home = fakeHome();
+  const app = await createApp({ dataDir: directory, verifySession: home.verifySession, internalToken: 'secret-token-for-test' });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${app.server.address().port}`;
-  async function request(path, data, cookie, extra = {}) {
-    const response = await fetch(base + path, { method: data ? 'POST' : 'GET', headers: { ...(data ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}), ...extra }, ...(data ? { body: JSON.stringify(data) } : {}) });
-    return { status: response.status, cookie: response.headers.get('set-cookie')?.split(';')[0], body: await response.json() };
+  async function request(path, data, cookie, extra = {}, method) {
+    const response = await fetch(base + path, { method: method ?? (data ? 'POST' : 'GET'), headers: { ...(data ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}), ...extra }, ...(data ? { body: JSON.stringify(data) } : {}) });
+    return { status: response.status, body: await response.json().catch(() => null) };
   }
   assert.equal((await request('/api/state')).status, 401);
-  const registered = await request('/api/register', { nickname: '테스트A', password: 'password123' });
-  assert.equal(registered.status, 200); assert.ok(registered.cookie);
-  const cookie = registered.cookie;
-  const saved = await readFile(join(directory, 'accounts.json'), 'utf8');
-  assert.ok(!saved.includes('password123')); assert.ok(!JSON.stringify(registered.body).includes('hash'));
-  assert.equal((await request('/api/register', { nickname: '테스트a', password: 'password123' })).status, 400);
-  assert.equal((await request('/api/login', { nickname: '테스트A', password: 'incorrect' })).status, 400);
-  assert.equal((await request('/api/login', { nickname: '테스트A', password: 'password123' })).status, 200);
-  const room = await request('/api/rooms', { name: '첫 번째 테이블', max: 2, mode: 'custom', cards: 10, ending: 'last' }, cookie);
+  assert.equal((await request('/api/state', undefined, 'wj_session=not-a-token')).status, 401);
+  // Own login is gone: the homepage is the only way in.
+  assert.equal((await request('/api/register', { nickname: '테스트A', password: 'password123' })).status, 401);
+  assert.equal((await request('/api/login', { nickname: '테스트A', password: 'password123' })).status, 401);
+  const a = home.signIn('테스트A');
+  const state = await request('/api/state', undefined, a.cookie);
+  assert.equal(state.status, 200); assert.equal(state.body.me.nickname, '테스트A'); assert.equal(state.body.me.id, a.id);
+  await app.accounts.saveQueue;
+  const saved = JSON.parse(await readFile(join(directory, 'records.json'), 'utf8'));
+  assert.deepEqual(saved, [{ id: a.id, nickname: '테스트A', wins: 0, played: 0 }]);
+  const room = await request('/api/rooms', { name: '첫 번째 테이블', max: 2, mode: 'custom', cards: 10, ending: 'last' }, a.cookie);
   assert.equal(room.status, 200); assert.equal(room.body.room.players.length, 1);
-  const bot = await request('/api/bot', {}, cookie); assert.equal(bot.body.room.players.length, 2);
-  assert.equal((await request('/api/bot', {}, cookie)).status, 400);
-  const chat = await request('/api/chat', { channel: 'room', text: '<script>alert(1)</script>' }, cookie);
+  const bot = await request('/api/bot', {}, a.cookie); assert.equal(bot.body.room.players.length, 2);
+  assert.equal((await request('/api/bot', {}, a.cookie)).status, 400);
+  const chat = await request('/api/chat', { channel: 'room', text: '<script>alert(1)</script>' }, a.cookie);
   assert.equal(chat.body.room.messages[0].text, '<script>alert(1)</script>'); assert.equal(chat.body.messages.length, 0);
-  const account2 = await request('/api/register', { nickname: '다른친구', password: 'password456' });
-  assert.equal((await request('/api/join', { roomId: room.body.room.id }, account2.cookie)).status, 400);
-  assert.equal((await request('/api/state', undefined, account2.cookie)).body.room, null);
-  assert.equal((await request('/api/chat', { channel: 'room', text: 'hi' }, account2.cookie)).status, 400);
-  assert.equal((await request('/api/leave', {}, cookie, { Origin: 'https://untrusted.example' })).status, 403);
-  await request('/api/logout', {}, cookie);
-  assert.equal((await request('/api/state', undefined, cookie)).status, 401);
+  const b = home.signIn('다른친구');
+  assert.equal((await request('/api/join', { roomId: room.body.room.id }, b.cookie)).status, 400);
+  assert.equal((await request('/api/state', undefined, b.cookie)).body.room, null);
+  assert.equal((await request('/api/chat', { channel: 'room', text: 'hi' }, b.cookie)).status, 400);
+  assert.equal((await request('/api/leave', {}, a.cookie, { Origin: 'https://untrusted.example' })).status, 403);
+
+  // Internal admin API: hidden without the secret, refused through the tunnel.
+  const secret = { 'X-Internal-Token': 'secret-token-for-test' };
+  assert.equal((await request(`/internal/users/${a.id}`)).status, 404);
+  assert.equal((await request(`/internal/users/${a.id}`, undefined, null, { 'X-Internal-Token': 'wrong' })).status, 404);
+  assert.equal((await request(`/internal/users/${a.id}`, undefined, null, { ...secret, 'CF-Connecting-IP': '1.2.3.4' })).status, 404);
+  assert.equal((await request(`/internal/users/${a.id}`, undefined, null, { ...secret, 'X-Forwarded-For': '1.2.3.4' })).status, 404);
+  const record = await request(`/internal/users/${a.id}`, undefined, null, secret);
+  assert.deepEqual(record.body, { ok: true, record: { id: a.id, nickname: '테스트A', wins: 0, played: 0 } });
+  assert.equal((await request('/internal/users/unknown-id', undefined, null, secret)).body.record, null);
+  const renamed = await request(`/internal/users/${a.id}`, { nickname: '새이름' }, null, secret, 'PUT');
+  assert.equal(renamed.status, 200); assert.equal(renamed.body.changed, true);
+  home.members.get(a.token).nickname = '새이름';
+  const after = await request('/api/state', undefined, a.cookie);
+  assert.equal(after.body.me.nickname, '새이름'); assert.equal(after.body.room.players[0].nickname, '새이름');
+  // Delete: live stream gets signedOut, record and room seat disappear.
+  const events = await fetch(base + '/api/events', { headers: { Cookie: a.cookie } });
+  const reader = events.body.getReader();
+  home.signOut(a.token);
+  const removed = await request(`/internal/users/${a.id}`, undefined, null, secret, 'DELETE');
+  assert.deepEqual(removed.body, { ok: true, removed: true });
+  let text = ''; const decoder = new TextDecoder();
+  while (true) { const { value, done } = await reader.read(); if (done) break; text += decoder.decode(value); }
+  assert.match(text, /event: signedOut/);
+  assert.equal(app.rooms.size, 0);
+  assert.equal((await request('/api/state', undefined, a.cookie)).status, 401);
+  await app.accounts.saveQueue;
+  const left = JSON.parse(await readFile(join(directory, 'records.json'), 'utf8'));
+  assert.deepEqual(left.map(u => u.nickname), ['다른친구']);
 });
 
 test('8 independent sessions receive the same start, starter and 80-card public state over SSE', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'halli-galli-sse-'));
-  const app = await createApp({ dataDir: directory });
+  const home = fakeHome();
+  const app = await createApp({ dataDir: directory, verifySession: home.verifySession });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   const abort = new AbortController();
   t.after(async () => { abort.abort(); await app.close(); await rm(directory, { recursive: true, force: true }); });
@@ -53,7 +98,7 @@ test('8 independent sessions receive the same start, starter and 80-card public 
   }
   const cookies = [], readers = [];
   for (let i = 0; i < 8; i++) {
-    const { cookie } = await post('register', { nickname: `접속친구${i}`, password: 'sse-test-password' }); cookies.push(cookie);
+    const { cookie } = home.signIn(`접속친구${i}`); cookies.push(cookie);
     const response = await fetch(base + '/api/events', { headers: { Cookie: cookie }, signal: abort.signal });
     readers.push(response.body.getReader());
   }

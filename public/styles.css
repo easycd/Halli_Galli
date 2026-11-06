@@ -31,3 +31,4 @@ body.paused .auth-visual img{animation-play-state:paused}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.wheel{rotate:var(--stop,0deg)}}
 @media(prefers-reduced-transparency:reduce){.glass,dialog,.waiting-overlay{backdrop-filter:none;background:#fff4df}.floating-fruit{opacity:.08}}
 @supports not (backdrop-filter:blur(1px)){.glass{background:#fff2da}.waiting-overlay{background:#fff4df}}
+.auth-actions{margin-top:26px}.auth-panel>p{color:var(--muted);line-height:1.7}
