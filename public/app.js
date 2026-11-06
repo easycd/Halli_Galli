@@ -67,9 +67,14 @@ async function api(path, data) {
   }
   return result;
 }
+// at most one automatic reload per new build, so a stubborn cache can never make the page reload over and over
+function reloadOnce(build) {
+  try { if (sessionStorage.getItem('hg-reloaded') === build) return false; sessionStorage.setItem('hg-reloaded', build); } catch { return false; }
+  return true;
+}
 function accept(next) {
   // the server now hands out newer screen files than this page was loaded with: load them (the game itself lives on the server)
-  if (state?.build && next.build && state.build !== next.build) { stream?.close(); location.reload(); return; }
+  if (state?.build && next.build && state.build !== next.build && reloadOnce(next.build)) { stream?.close(); location.reload(); return; }
   const previousGame = state?.room?.game, nextGame = next.room?.game;
   if (previousGame?.id !== nextGame?.id) {
     activeFlips.clear(); activeCollection = null; clearTimeout(collectionTimer); seenCollections.clear();

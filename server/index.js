@@ -10,6 +10,9 @@ import { Game } from './game.js';
 /** 게임을 올릴 주소 경로. 예: BASE_PATH=/haligali → https://도메인/haligali/ . 없으면 맨 앞(/) */
 export const basePath = (value = process.env.BASE_PATH ?? '/') => `/${String(value).replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
 
+/** ./app.js → ./app.js?v=<build> for the screen's own scripts and styles (index.html links, app.js imports). */
+export const versioned = (text, build) => text.replace(/(["'])\.\/(app\.js|styles\.css|table\.css|table-layout\.js)\1/g, (_, q, name) => `${q}./${name}?v=${build}${q}`);
+
 async function screenBuild(root) {
   const hash = createHash('sha256');
   for (const name of (await readdir(root)).sort()) hash.update(name).update(await readFile(join(root, name)));
@@ -244,8 +247,12 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
       const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css', '/table.css': 'table.css', '/table-layout.js': 'table-layout.js', '/fruit.svg': 'fruit.svg', '/login-art.svg': 'login-art.svg', '/silver-bell.svg': 'silver-bell.svg' };
       const file = files[url.pathname];
       if (!file) { res.writeHead(404); return res.end('Not found'); }
-      const content = await readFile(join(publicRoot, file));
-      res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' })[extname(file)], 'Cache-Control': 'no-cache' });
+      let content = await readFile(join(publicRoot, file));
+      // Every screen file is asked for with ?v=<build>. A cache in between (the browser, or a Cloudflare
+      // "Browser Cache TTL" that overrides no-cache) then cannot hand out an old app.js after an update.
+      if (file === 'index.html' || file === 'app.js') content = Buffer.from(versioned(content.toString('utf8'), build));
+      const cache = file === 'index.html' ? 'no-store' : url.searchParams.get('v') === build ? 'public, max-age=31536000, immutable' : 'no-cache';
+      res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' })[extname(file)], 'Cache-Control': cache });
       res.end(content);
     } catch (error) {
       if (!res.headersSent) json(400, { error: error.message });
