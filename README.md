@@ -49,3 +49,11 @@ npm test
 - 로그인 화면·방 생성·8인 플레이는 브라우저에서 확인하고, 모든 실제 네트워크 조건이나 기기에서의 검증을 완료한 것은 아닙니다.
 
 자세한 요구사항과 제안 구분은 [기획서](docs/기획서.md)를 참고하세요. UI/UX 지침은 프로젝트의 `.agents/skills/ui-ux-pro-max/SKILL.md`를 사용합니다.
+
+## 개인 서버에서 경로 아래로 실행 (wodnjs.com/haligali)
+
+| 변수 | 예 | 설명 |
+| --- | --- | --- |
+| `BASE_PATH` | `/haligali` | 화면·API·쿠키를 이 경로 아래로 둡니다. 없으면 `/` |
+| `HG_DATA_DIR` | `/var/lib/webgames/haligali` | 계정 파일 폴더. 기본 `.data/` |
+| `TRUST_PROXY` | `true` | Cloudflare 터널 같은 프록시 뒤일 때. `X-Forwarded-Proto: https`면 Secure 쿠키, 로그인 횟수 제한은 `CF-Connecting-IP` 기준 |
