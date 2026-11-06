@@ -2,16 +2,17 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join, extname } from 'node:path';
-import { randomBytes, randomUUID, randomInt } from 'node:crypto';
+import { randomUUID, randomInt } from 'node:crypto';
 import { Accounts } from './auth.js';
+import { createHomeAuth, HomeAuthUnavailable, internalAllowed, readHomeToken } from './homeAuth.js';
 import { Game } from './game.js';
 
 /** 게임을 올릴 주소 경로. 예: BASE_PATH=/haligali → https://도메인/haligali/ . 없으면 맨 앞(/) */
 export const basePath = (value = process.env.BASE_PATH ?? '/') => `/${String(value).replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
 
-export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLToPath(new URL('../.data/', import.meta.url)), debug = true, base = basePath(), trustProxy = process.env.TRUST_PROXY === 'true' } = {}) {
+export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLToPath(new URL('../.data/', import.meta.url)), debug = true, base = basePath(), verifySession = createHomeAuth(), internalToken = process.env.INTERNAL_TOKEN ?? '' } = {}) {
   const accounts = new Accounts(dataDir); await accounts.load();
-  const sessions = new Map(), streams = new Map(), rooms = new Map(), chats = [], limits = new Map();
+  const streams = new Map(), rooms = new Map(), chats = [], limits = new Map();
   const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
   const roomFor = id => [...rooms.values()].find(r => r.players.some(p => p.id === id));
   const online = id => (streams.get(id)?.size ?? 0) > 0;
@@ -30,7 +31,7 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
   });
   function broadcast() {
     for (const [id, responses] of streams) {
-      const user = accounts.users.find(u => u.id === id);
+      const user = accounts.find(id);
       if (!user) continue;
       const data = `data: ${JSON.stringify(snapshot(user))}\n\n`;
       for (const res of responses) res.write(data);
@@ -65,10 +66,51 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
     // Debug games never alter persistent rankings, including games with only humans.
     if (debug || room.players.some(p => p.bot) || room.game.draw) return;
     for (const result of room.game.results) {
-      const user = accounts.users.find(u => u.id === result.id);
+      const user = accounts.find(result.id);
       if (user) { user.played++; if (result.winner) user.wins++; }
     }
     accounts.save().catch(console.error);
+  }
+  function endStream(res, id) {
+    try { res.write('event: signedOut\ndata: {}\n\n'); } catch { /* already closed */ }
+    res.end();
+    streams.get(id)?.delete(res);
+    if (!streams.get(id)?.size) streams.delete(id);
+  }
+  /** Signed-out member: close every tab, drop them from their room. */
+  function kick(id) {
+    for (const res of [...(streams.get(id) ?? [])]) endStream(res, id);
+    const user = accounts.find(id); if (user) leave(user);
+    broadcast();
+  }
+  /** Homepage admin dashboard → GET (record), PUT { nickname }, DELETE. Shared secret, local only, never via the tunnel. */
+  async function internal(req, res, url, json) {
+    if (!internalAllowed(req.headers, internalToken)) return json(404, { error: 'not found' });
+    const match = /^\/internal\/users\/([A-Za-z0-9_-]{1,64})(\/logout)?$/.exec(url.pathname);
+    if (!match) return json(404, { error: 'not found' });
+    const id = match[1];
+    if (match[2]) {
+      // Signed out on the homepage by the admin (forced logout or new password) → close the live streams now.
+      if (req.method !== 'POST') return json(405, { error: 'method not allowed' });
+      verifySession.forget?.(id); kick(id);
+      return json(200, { ok: true });
+    }
+    if (req.method === 'GET') { const user = accounts.find(id); return json(200, { ok: true, record: user ? accounts.public(user) : null }); }
+    if (req.method === 'PUT') {
+      const data = await body(req);
+      const nickname = typeof data.nickname === 'string' ? data.nickname.trim().slice(0, 12) : '';
+      if (!nickname) return json(400, { error: 'nickname required' });
+      verifySession.forget?.(id);
+      const changed = accounts.rename(id, nickname);
+      for (const room of rooms.values()) for (const p of room.players) if (p.id === id) p.nickname = nickname;
+      broadcast(); return json(200, { ok: true, changed });
+    }
+    if (req.method === 'DELETE') {
+      verifySession.forget?.(id);
+      kick(id);
+      return json(200, { ok: true, removed: accounts.remove(id) });
+    }
+    return json(405, { error: 'method not allowed' });
   }
   async function body(req) {
     let result = ''; for await (const chunk of req) {
@@ -90,34 +132,24 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
         if (!url.pathname.startsWith(base)) { res.writeHead(404); return res.end('Not found'); }
         url.pathname = url.pathname.slice(base.length - 1);
       }
-      // Cloudflare 터널 같은 프록시 뒤에서는 실제 접속 주소·https 여부를 머리글에서 읽음
-      const clientIp = (trustProxy && (req.headers['cf-connecting-ip'] || String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim())) || req.socket.remoteAddress;
-      const secure = req.socket.encrypted || (trustProxy && req.headers['x-forwarded-proto'] === 'https');
-      const cookieAttrs = `HttpOnly; SameSite=Strict; Path=${base}`;
-      const token = /(?:^|; )hg_session=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
-      const session = sessions.get(token);
-      const user = session && session.expires > Date.now() ? accounts.users.find(u => u.id === session.id) : null;
+      if (url.pathname.startsWith('/internal/')) return internal(req, res, url, json);
+      let user = null;
+      if (url.pathname.startsWith('/api/')) {
+        try { const member = await verifySession(req.headers.cookie); if (member) user = accounts.ensure(member); }
+        catch (error) { return json(503, { error: error instanceof HomeAuthUnavailable ? error.message : '잠시 후 다시 시도해주세요.' }); }
+      }
       if (req.method === 'POST') {
         if (req.headers.origin && ![`http://${req.headers.host}`, `https://${req.headers.host}`].includes(req.headers.origin)) return json(403, { error: '허용되지 않은 출처예요.' });
         if (!req.headers['content-type']?.startsWith('application/json')) return json(415, { error: 'JSON 요청만 허용해요.' });
       }
-      if (req.method === 'POST' && ['/api/register', '/api/login'].includes(url.pathname)) {
-        rate(`auth:${clientIp}`, 30, 60000);
-        const data = await body(req);
-        const account = url.pathname.endsWith('register') ? await accounts.register(data.nickname?.trim(), data.password) : await accounts.login(data.nickname?.trim(), data.password);
-        if (token) sessions.delete(token);
-        const sid = randomBytes(32).toString('hex');
-        sessions.set(sid, { id: account.id, expires: Date.now() + 86400000 });
-        res.setHeader('Set-Cookie', `hg_session=${sid}; ${cookieAttrs}; Max-Age=86400${secure ? '; Secure' : ''}`);
-        return json(200, snapshot(account));
-      }
       if (url.pathname.startsWith('/api/')) {
-        if (!user) return json(401, { error: '로그인 후 이용해주세요.' });
+        if (!user) return json(401, { error: '홈페이지에서 로그인 후 이용해주세요.' });
         if (url.pathname === '/api/state' && req.method === 'GET') return json(200, snapshot(user));
         if (url.pathname === '/api/events' && req.method === 'GET') {
           if ((streams.get(user.id)?.size ?? 0) >= 8) return json(429, { error: '열린 탭이 너무 많아요.' });
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
           if (!streams.has(user.id)) streams.set(user.id, new Set());
+          res.homeToken = readHomeToken(req.headers.cookie);
           streams.get(user.id).add(res); broadcast();
           req.on('close', () => {
             streams.get(user.id)?.delete(res);
@@ -133,12 +165,6 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
         rate(`actions:${user.id}`, 80, 10000);
         const data = await body(req); let room = roomFor(user.id);
         switch (url.pathname) {
-          case '/api/logout':
-            leave(user); sessions.delete(token);
-            for (const response of streams.get(user.id) ?? []) response.end();
-            streams.delete(user.id);
-            res.setHeader('Set-Cookie', `hg_session=; ${cookieAttrs}; Max-Age=0`);
-            broadcast(); return json(200, { ok: true });
           case '/api/rooms': {
             if (room) throw new Error('현재 방을 나간 후 새 방을 만들어주세요.');
             if (rooms.size >= 100) throw new Error('생성 가능한 방 수를 초과했어요.');
@@ -203,7 +229,7 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
     for (const room of rooms.values()) {
       for (const [id, at] of room.disconnected) {
         if (online(id)) room.disconnected.delete(id);
-        else if (now - at >= 30000) { const u = accounts.users.find(u => u.id === id); if (u) leave(u); changed = true; }
+        else if (now - at >= 30000) { const u = accounts.find(id); if (u) leave(u); changed = true; }
       }
       const g = room.game; if (!g) continue;
       if (g.tick(now)) changed = true;
@@ -225,10 +251,17 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
     for (const responses of streams.values()) for (const res of responses) res.write(': heartbeat\n\n');
     const now = Date.now();
     for (const [key, value] of limits) if (value.until < now) limits.delete(key);
-    for (const [key, value] of sessions) if (value.expires < now) sessions.delete(key);
   }, 15000);
+  // Signed out or deleted on the homepage → close the live stream too (the page then goes to the homepage login).
+  const recheck = setInterval(() => {
+    for (const [id, responses] of streams) for (const res of responses) {
+      if (!res.homeToken) continue;
+      verifySession(`wj_session=${res.homeToken}`).then(member => { if (!member || member.id !== id) endStream(res, id); }).catch(() => undefined);
+    }
+  }, 60000);
+  recheck.unref?.();
   return { server, accounts, rooms, close: async () => {
-    clearInterval(timer); clearInterval(heartbeat);
+    clearInterval(timer); clearInterval(heartbeat); clearInterval(recheck);
     for (const responses of streams.values()) for (const res of responses) res.end();
     await new Promise(resolve => server.close(resolve));
     await accounts.saveQueue;
