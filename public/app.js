@@ -21,6 +21,7 @@ const paths = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   spark: '<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z"/>',
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
 };
 function icon(name) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.spark}</svg>`; }
 const bellArt = () => '<img src="./silver-bell.svg" alt="" draggable="false">';
@@ -108,9 +109,11 @@ function chime() {
     });
   } catch { /* Audio is optional. */ }
 }
+// 왼쪽 위: 홈페이지(JAEWON 메인)로 돌아가기
+function siteHome() { return `<a class="icon-button site-home" href="${HOME}" aria-label="홈페이지로 돌아가기" title="홈페이지로">${icon('home')}</a>`; }
 function brand() { return `<a class="brand" href="./" aria-label="할리갈리 홈"><span class="brand-mark">${icon('bell')}</span><span class="brand-name">halli<span>galli.</span></span></a>`; }
 function header(auth = false) {
-  return `<header class="topbar">${brand()}<nav class="top-actions" aria-label="설정"><button class="text-button" data-do="rules" aria-label="게임 방법">${icon('help')}<span>게임 방법</span></button><button class="text-button" data-do="motion" aria-label="배경 애니메이션 ${paused ? '재생' : '일시정지'}">${icon(paused ? 'play' : 'pause')}<span>${paused ? '배경 재생' : '배경 멈추기'}</span></button>${auth ? '' : `<button class="text-button" data-do="sound" aria-label="소리 ${sound ? '끄기' : '켜기'}" aria-pressed="${sound}"><span>소리 ${sound ? '켜짐' : '꺼짐'}</span>${icon('bell')}</button><div class="profile"><span class="avatar c1">${escape(state.me.nickname[0])}</span><strong>${escape(state.me.nickname)}</strong><button class="text-button" data-do="logout" aria-label="로그아웃">${icon('logout')}</button></div>`}</nav></header>`;
+  return `<header class="topbar"><div class="header-left">${siteHome()}${brand()}</div><nav class="top-actions" aria-label="설정"><button class="text-button" data-do="rules" aria-label="게임 방법">${icon('help')}<span>게임 방법</span></button><button class="text-button" data-do="motion" aria-label="배경 애니메이션 ${paused ? '재생' : '일시정지'}">${icon(paused ? 'play' : 'pause')}<span>${paused ? '배경 재생' : '배경 멈추기'}</span></button>${auth ? '' : `<button class="text-button" data-do="sound" aria-label="소리 ${sound ? '끄기' : '켜기'}" aria-pressed="${sound}"><span>소리 ${sound ? '켜짐' : '꺼짐'}</span>${icon('bell')}</button><div class="profile"><span class="avatar c1">${escape(state.me.nickname[0])}</span><strong>${escape(state.me.nickname)}</strong><button class="text-button" data-do="logout" aria-label="로그아웃">${icon('logout')}</button></div>`}</nav></header>`;
 }
 function footer(auth = false) { if (auth) return ''; return `<footer class="page-foot"><span class="runtime-badge">${state.debug ? 'DEBUG · 기록 미반영' : 'ONLINE'}</span><span class="connection"><i class="dot"></i>서버 연결됨</span></footer>`; }
 function authPage() {
