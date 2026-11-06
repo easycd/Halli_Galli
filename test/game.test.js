@@ -109,3 +109,69 @@ test('many complete 2-8 person games preserve every card through penalties and r
     if (!g.draw) assert.ok(g.results.some(p => p.winner));
   }
 });
+
+test('card counts are private: a viewer sees only their own until the game ends', () => {
+  const g = new Game(players(3), settings, { now: 0 });
+  const [a] = g.players;
+  const view = g.snapshot(a.id).players;
+  assert.equal(view.find(p => p.id === a.id).cards, 10);
+  assert.ok(view.filter(p => p.id !== a.id).every(p => p.cards === null));
+  assert.ok(g.snapshot().players.every(p => p.cards === null));
+  g.finish();
+  assert.ok(g.snapshot(a.id).players.every(p => p.cards === 10));
+});
+
+test('a player who leaves mid-game loses their cards and turn; the others play on', () => {
+  const g = new Game(players(4), settings, { now: 0, pick: () => 0 });
+  g.phase = 'playing'; g.turn = 2; g.deadline = 10000;
+  const [a, b, c, d] = g.players;
+  c.open = [card('lime', 3)];
+  const v = g.version;
+  assert.equal(g.removePlayer(c.id, 500), true);
+  assert.deepEqual(g.players.map(p => p.id), [a.id, b.id, d.id]);
+  assert.equal(g.phase, 'playing');
+  assert.equal(g.players[g.turn].id, d.id, 'the next player clockwise takes the turn');
+  assert.equal(g.deadline, 10500);
+  assert.equal(g.counts().lime, 0, 'their open pile is gone too');
+  assert.ok(g.version > v);
+  assert.deepEqual(g.departures.map(x => x.nickname), [c.nickname]);
+  assert.deepEqual(g.players.map(p => p.seat), [0, 1, 3], 'seat numbers stay as they were');
+  // someone before the current player leaves: the turn stays with the same person
+  g.removePlayer(a.id, 600);
+  assert.equal(g.players[g.turn].id, d.id);
+  assert.equal(g.removePlayer('nobody'), false);
+});
+
+test('when only one player is left the game ends and that player wins', () => {
+  const g = new Game(players(2), { ...settings, ending: 'last' }, { now: 0 });
+  g.phase = 'playing';
+  const [a, b] = g.players;
+  g.removePlayer(a.id, 100);
+  assert.equal(g.phase, 'finished');
+  assert.equal(g.draw, false);
+  assert.deepEqual(g.results.map(r => [r.id, r.winner]), [[b.id, true]]);
+  assert.match(g.notice, /우승/);
+  // during the start wheel too
+  const s = new Game(players(3), settings, { now: 0, pick: () => 2 });
+  s.removePlayer(s.players[2].id, 0);
+  assert.equal(s.phase, 'spinning'); assert.equal(s.starter, 0); assert.equal(s.turn, 0);
+  s.removePlayer(s.players[0].id, 0);
+  assert.equal(s.phase, 'finished'); assert.equal(s.results[0].winner, true);
+  // players already knocked out do not count as still playing
+  const o = new Game(players(3), settings, { now: 0 });
+  o.phase = 'playing'; o.players[1].status = 'out';
+  o.removePlayer(o.players[0].id, 0);
+  assert.equal(o.phase, 'finished');
+  assert.equal(o.results.find(r => r.winner).id, 'p2');
+});
+
+test('the bell remembers who hit it (for the hand animation)', () => {
+  const g = fixture(2); g.players.forEach((p, i) => { p.color = 5 + i; });
+  g.players[0].open = [card('lime', 5)];
+  g.ring('p1', 0);
+  assert.deepEqual({ ...g.lastRing, version: 0 }, { id: 'p1', nickname: '친구1', color: 6, ok: true, version: 0 });
+  assert.equal(g.lastRing.version, g.version);
+  g.ring('p0', 0);
+  assert.equal(g.lastRing.id, 'p0'); assert.equal(g.lastRing.ok, false);
+  assert.equal(g.snapshot().lastRing.id, 'p0');
+});

@@ -45,6 +45,10 @@ test('collection visual is created only for a confirmed pickup with the exact ca
   assert.equal(detectCollection(previous(), wrong), null);
   const missed = collected(); missed.players[0].cards = 12;
   assert.equal(detectCollection(previous(), missed), null);
+  // another player's win: their counts are hidden (null), the hits and empty piles are enough
+  const hiddenBefore = previous(), hiddenAfter = collected();
+  for (const list of [hiddenBefore.players, hiddenAfter.players]) list.forEach(p => { p.cards = null; });
+  assert.equal(detectCollection(hiddenBefore, hiddenAfter)?.total, 5);
 });
 test('winning bell ending a game still produces a pickup, a new game never does', () => {
   const next = collected(); next.phase = 'finished';

@@ -75,7 +75,6 @@
 .flip-face{position:absolute;inset:0;border:1px solid #ede9df;border-radius:7px;backface-visibility:hidden;background:#fffefa;overflow:hidden}
 .flip-back.card-back{background-color:#e6b7d2;background-image:repeating-linear-gradient(40deg,transparent 0 7px,#a7548830 7px 8px,transparent 8px 16px)}
 .flip-front{transform:rotateX(180deg)}
-@media(max-width:1150px){.game-center .seat{--pile-offset:47px;--label-y:calc(var(--label-factor) * var(--pile-offset) + 51px)}.game-center .hidden-deck{width:43px;height:66px}.game-center .playing-card,.flip-flight{width:57px;height:88px}.game-center .seat-name{min-width:80px;font-size:10px}}
 @media(max-width:930px){.game-layout>.chat-panel{height:260px;min-height:0}.game-layout>.presence{height:auto;min-height:980px}.game-center .game-table{width:calc(100% - 28px)}}
 @media(max-width:650px){.game-layout>.game-center{height:auto;min-height:760px}.game-center .game-table{width:calc(100% - 22px);max-width:430px;margin:72px auto 95px;min-height:0}.game-center .seat{--pile-offset:27px;--label-y:calc(var(--label-factor) * var(--pile-offset) + 31px)}.game-center .hidden-deck{width:28px;height:43px}.game-center .playing-card,.flip-flight{width:34px;height:52px;border-radius:4px}.game-center .seat-name{min-width:60px;max-width:82px;min-height:22px;padding:2px 5px;border-radius:8px;font-size:8px;gap:2px}.game-center .seat-name .me{font-size:7px;padding:0 2px}.game-center .seat-status{top:calc(var(--label-y) + 25px);font-size:8px;width:90px}.game-center .bell-control{width:76px;height:76px}.game-center .deck-count{font-size:9px;min-width:18px;height:19px;line-height:17px}.game-center .seat.mine .hidden-deck::after{inset:-8px}.game-layout>.presence{min-height:0;height:auto}.game-layout>.chat-panel{height:280px;min-height:0}}
 @media(prefers-reduced-motion:reduce){.flip-flight{display:none}.game-center .seat.mine .hidden-deck:enabled:hover{transform:translate(-50%,-50%) rotate(var(--seat-rotation))}}
@@ -105,6 +104,55 @@
 .collection-banner{position:absolute;top:10%;left:50%;padding:10px 18px;border-radius:13px;background:#fff4cf;color:#423723;border:1px solid #ffe8a4;box-shadow:0 6px 18px #00291d55;white-space:nowrap;font-size:14px;font-weight:650;transform:translateX(-50%)}
 .collection-banner strong{margin-left:8px;color:#855a12}
 .game-center .collection-winner .hidden-deck{outline:3px solid #ffe390;outline-offset:5px;filter:brightness(1.12)}
-@media(max-width:1150px){.collection-packet{width:57px;height:88px}}
 @media(max-width:650px){.collection-packet{width:34px;height:52px}.collection-card,.collection-stack-sheets{border-radius:4px}.collection-ring{width:92px;height:92px;border-width:2px}.collection-banner{top:-12%;padding:7px 12px;font-size:11px}}
 @media(prefers-reduced-motion:reduce){.collection-layer{display:none}}
+
+/* ── One table shape at every screen size ──
+   The game area is as tall as the window allows (--fit-h) and the table is drawn at one size (760 / 340 on phones)
+   and scaled as a whole (--k), so cards, names and the bell always keep the same proportions. */
+.game-layout{grid-template-rows:var(--fit-h,740px)}
+.game-layout>.game-center,.game-layout>.panel{height:auto;min-height:0}
+.game-center .table-meta{position:absolute;top:0;right:0;z-index:5;min-height:0;padding:14px 16px;pointer-events:none}
+.game-center .table-stage{position:relative;flex:1 1 auto;min-height:0}
+.game-center .table-stage>.game-table{position:absolute;left:50%;top:50%;width:760px;height:760px;max-width:none;min-height:0;margin:0;aspect-ratio:auto;flex:none;transform:translate(-50%,calc(-50% - 36px * var(--k,1))) scale(var(--k,1));transform-origin:50% 50%}
+.game-center .game-controls{display:flex;align-items:center;gap:14px;min-height:0;padding:12px 16px}
+.game-center .game-controls .notice-bar{flex:1;min-width:0;margin:0;padding:0;min-height:0;background:none;border:0;text-align:left;font-size:12px;color:#5d4c38}
+@media(max-width:930px){.game-layout{grid-template-rows:var(--fit-h,740px) auto}.game-layout>.presence{height:auto;min-height:0}}
+
+/* whose turn: an arrow from the bell to that seat, and that seat's name tag lights up */
+.turn-arrow{position:absolute;left:50%;top:50%;width:0;height:0;rotate:var(--turn-angle);z-index:4;pointer-events:none}
+.turn-arrow span{position:absolute;left:80px;top:-14px;width:40px;height:28px;background:#ffe390;clip-path:polygon(0 34%,52% 34%,52% 0,100% 50%,52% 100%,52% 66%,0 66%);filter:drop-shadow(0 0 5px #ffe390);animation:turn-nudge .8s ease-in-out infinite alternate}
+@keyframes turn-nudge{from{translate:0 0}to{translate:7px 0}}
+.game-center .seat.current .seat-name{box-shadow:0 0 0 3px #ffe390,0 0 20px #ffe390b3;z-index:6}
+.game-center .seat-name .turn-tag{background:#2f4a3c;color:#ffe9a0;border-radius:6px;padding:1px 5px;font-size:9px;font-weight:750;margin-right:2px}
+.game-center .seat.current .hidden-deck{outline:3px solid #ffe390;outline-offset:4px}
+
+/* card counts: only mine, under my cards */
+.game-center .seat.mine .seat-status{color:#fff7dc;font-size:12px;font-weight:600}
+.game-center .seat.mine .seat-status strong{font-size:16px;color:#ffe390;font-variant-numeric:tabular-nums;margin:0 1px}
+
+/* first-player wheel: big enough to read, a line between slices, names in the middle of each slice */
+.waiting-overlay .wheel{width:216px;height:216px}
+.waiting-overlay .wheel:after{inset:80px;z-index:1}
+.waiting-overlay .wheel span{width:66px;text-align:center;font-size:11px;color:#33291d;z-index:2;transform:translate(-50%,-50%) rotate(var(--angle)) translateY(-60px) rotate(90deg)}
+/* up to 4 players the slices are wide: the name runs across the slice, upright when the slice stops under the pointer */
+.waiting-overlay .wheel.few span{width:84px;font-size:12px;transform:translate(-50%,-50%) rotate(var(--angle)) translateY(-58px)}
+.wheel-line{position:absolute;left:50%;top:50%;width:2px;height:50%;background:#fff7df;transform-origin:50% 0;transform:translateX(-50%) rotate(calc(var(--angle) + 180deg))}
+
+/* the first hand on the bell, in that player's colour */
+.hand-hit{position:absolute;left:50%;top:50%;width:120px;height:160px;z-index:9;pointer-events:none;opacity:0;filter:drop-shadow(0 10px 12px #00241b66);transform:translate(-50%,-50%)}
+.hand-hit svg{width:100%;height:100%;display:block}
+@media(prefers-reduced-motion:reduce){.hand-hit{display:none}}
+
+@media(max-width:650px){
+  .game-layout{grid-template-rows:none}
+  .game-layout>.game-center{min-height:0;height:auto}
+  .game-center .table-stage{flex:none;width:100%;aspect-ratio:340/432}
+  .game-center .table-stage>.game-table{width:340px;height:340px;transform:translate(-50%,calc(-50% + 4px * var(--k,1))) scale(var(--k,1))}
+  .game-center .table-meta{padding:10px 12px}
+  .turn-arrow span{left:40px;top:-7px;width:16px;height:14px;animation:none}
+  .hand-hit{width:63px;height:84px}
+  .game-center .seat-name .turn-tag{font-size:7px;padding:0 3px}
+  .game-center .seat.mine .seat-status{font-size:9px}.game-center .seat.mine .seat-status strong{font-size:11px}
+  .game-center .game-controls{padding:10px 12px}.game-center .game-controls .notice-bar{font-size:11px}
+}
