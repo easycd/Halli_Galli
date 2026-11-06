@@ -175,3 +175,28 @@ test('the bell remembers who hit it (for the hand animation)', () => {
   assert.equal(g.lastRing.id, 'p0'); assert.equal(g.lastRing.ok, false);
   assert.equal(g.snapshot().lastRing.id, 'p0');
 });
+
+test('holding the top card: only on your turn, seen by everyone, does not change the version; flipping or a new turn ends it', () => {
+  const g = fixture(3), version = g.version;
+  assert.equal(g.hold('p1', true), false, 'not your turn');
+  assert.equal(g.hold('p0', true), true);
+  assert.equal(g.version, version, 'a bell hit sent at the same moment still counts');
+  assert.deepEqual(g.snapshot('p2').players.map(p => p.holding), [true, false, false]);
+  assert.equal(g.hold('p0', false), true);
+  assert.equal(g.snapshot().players[0].holding, false);
+  g.hold('p0', true); g.flip('p0', 0);
+  assert.equal(g.snapshot().players[0].holding, false);
+  g.hold('p1', true); g.tick(g.deadline);   // auto flip at the deadline
+  assert.ok(g.snapshot().players.every(p => !p.holding));
+  g.hold('p2', true); g.players[0].open = [card('lime', 5)]; g.ring('p0', 0);   // right bell: the turn moves
+  assert.ok(g.snapshot().players.every(p => !p.holding));
+  g.players[0].deck = []; assert.equal(g.hold('p0', true), false, 'no cards, nothing to hold');
+});
+
+test('everyone sees how thick each deck is, not the count', () => {
+  const g = fixture(2);
+  g.players[0].deck = Array.from({ length: 30 }, () => card('lime', 1)); g.players[1].deck = [card('lime', 1)];
+  const view = g.snapshot('p1').players;
+  assert.equal(view[0].cards, null);
+  assert.ok(view[0].stack > view[1].stack && view[1].stack > 0);
+});

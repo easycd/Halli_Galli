@@ -1,21 +1,61 @@
 // eight clearly different colours, one per player (up to 8 at a table); dark text stays readable on all of them
 export const NAME_COLORS = ['#f4b6ae', '#cfe5a6', '#d3c1f0', '#f6dc8f', '#a8dcd6', '#f2b8d8', '#b9d2f2', '#f7c99a'];
 
+// How thick a deck looks: one sheet more for every 3 cards (at most 14). Others see this, not the exact count.
+export function stackLevel(count) {
+  return count > 0 ? Math.min(14, 1 + Math.floor(count / 3)) : 0;
+}
+
+// Seats sit on one circle (percent of the table from the middle); names go behind the cards, so the
+// circle leaves room outside for them.
+export const SEAT_RADIUS = 27;
+
 // Starting at the bottom, all seats follow the same clockwise circle.
 export function seatGeometry(index, count) {
   const degrees = 90 + index * 360 / Math.max(1, count);
   const radians = degrees * Math.PI / 180;
   const dx = Math.cos(radians), dy = Math.sin(radians);
-  return { x: 50 + dx * 30, y: 50 + dy * 30, dx, dy, rotation: degrees - 90 };
+  return { x: 50 + dx * SEAT_RADIUS, y: 50 + dy * SEAT_RADIUS, dx, dy, rotation: degrees - 90 };
 }
 
-export function flipKeyframes({ dx, dy, rotation }, offset) {
+// A card held "about to flip": slid a little toward the middle and tipped up on its far edge. The held card is
+// drawn at the flying card's size scaled down to the deck (deckScale), so the flight can carry on from it.
+export const LIFT = { inward: 12, angle: -42, grow: 1.06 };
+export function liftTransform(rotation, scale, angle = LIFT.angle) {
+  return `translate(-50%, -50%) rotate(${rotation}deg) perspective(600px) rotateX(${angle}deg) scale(${scale})`;
+}
+// rest (lying on the deck) → held
+export function liftKeyframes({ dx, dy, rotation }, offset, deckScale) {
+  const at = r => ({ left: `${dx * r}px`, top: `${dy * r}px` });
+  return [
+    { ...at(offset), transform: liftTransform(rotation, deckScale, 0) },
+    { ...at(offset - LIFT.inward), transform: liftTransform(rotation, deckScale * LIFT.grow) },
+  ];
+}
+
+// lifted: the card starts from the held pose (the player was pressing their deck), so the motion continues from there
+export function flipKeyframes({ dx, dy, rotation }, offset, lifted = false, deckScale = 1) {
   const transform = angle => `translate(-50%, -50%) rotate(${rotation}deg) perspective(600px) rotateX(${angle}deg)`;
+  if (lifted) {
+    const start = offset - LIFT.inward;
+    return [
+      { left: `${dx * start}px`, top: `${dy * start}px`, transform: liftTransform(rotation, deckScale * LIFT.grow), offset: 0 },
+      { left: `${dx * offset * .25}px`, top: `${dy * offset * .25}px`, transform: `${transform(-112)} scale(${(1 + deckScale * LIFT.grow) / 2})`, offset: .45 },
+      { left: `${-dx * offset}px`, top: `${-dy * offset}px`, transform: `${transform(-180)} scale(1)`, offset: 1 },
+    ];
+  }
   return [
     { left: `${dx * offset}px`, top: `${dy * offset}px`, transform: transform(0), offset: 0 },
     { left: `${dx * (offset + 22)}px`, top: `${dy * (offset + 22)}px`, transform: transform(-95), offset: .42 },
     { left: `${-dx * offset}px`, top: `${-dy * offset}px`, transform: transform(-180), offset: 1 },
   ];
+}
+
+// Name tags are turned with the seat but never upside down: returns the angle and which way "outward" is for the tag.
+export function labelTurn(rotation) {
+  const r = ((rotation % 360) + 360) % 360;
+  if (r > 90 && r < 270) return { angle: r - 180, out: -1 };
+  return { angle: r >= 270 ? r - 360 : r, out: 1 };
 }
 
 // Use confirmed public state only: a wrong bell, reconnect, or duplicate snapshot
