@@ -6,6 +6,7 @@ import { randomUUID, randomInt, createHash } from 'node:crypto';
 import { Accounts } from './auth.js';
 import { createHomeAuth, HomeAuthUnavailable, internalAllowed, readHomeToken } from './homeAuth.js';
 import { Game } from './game.js';
+import { createPlayReporter, playReport } from './homePlays.js';
 
 /** 게임을 올릴 주소 경로. 예: BASE_PATH=/haligali → https://도메인/haligali/ . 없으면 맨 앞(/) */
 export const basePath = (value = process.env.BASE_PATH ?? '/') => `/${String(value).replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
@@ -19,7 +20,7 @@ async function screenBuild(root) {
   return hash.digest('hex').slice(0, 12);
 }
 
-export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLToPath(new URL('../.data/', import.meta.url)), debug = true, base = basePath(), verifySession = createHomeAuth(), internalToken = process.env.INTERNAL_TOKEN ?? '' } = {}) {
+export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLToPath(new URL('../.data/', import.meta.url)), debug = true, base = basePath(), verifySession = createHomeAuth(), internalToken = process.env.INTERNAL_TOKEN ?? '', reportPlay = createPlayReporter({ token: internalToken }) } = {}) {
   const accounts = new Accounts(dataDir); await accounts.load();
   const streams = new Map(), rooms = new Map(), chats = [], limits = new Map();
   const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
@@ -88,6 +89,8 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
   function record(room) {
     if (room.recorded || room.game?.phase !== 'finished') return;
     room.recorded = true;
+    // the homepage admin's play log gets every game, test games with bots included (marked 봇 포함)
+    try { reportPlay(playReport(room)).catch(() => {}); } catch (error) { console.error('플레이 기록 만들기 실패:', error?.message); }
     // Debug games never alter persistent rankings, including games with only humans.
     if (debug || room.players.some(p => p.bot) || room.game.draw) return;
     for (const result of room.game.results) {
