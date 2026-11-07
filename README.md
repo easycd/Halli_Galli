@@ -59,7 +59,8 @@ npm test
 | `BASE_PATH` | `/haligali` | 화면·API·쿠키를 이 경로 아래로 둡니다. 없으면 `/` |
 | `HG_DATA_DIR` | `/var/lib/webgames/haligali` | 전적 파일 폴더. 기본 `.data/` |
 | `HOME_AUTH_URL` | `http://127.0.0.1:8080/api/auth/me` | 로그인 확인용 홈페이지 서버 주소(기본값 그대로면 됨) |
-| `INTERNAL_TOKEN` | (긴 무작위 문자열) | 홈페이지 관리자 페이지가 회원 전적 조회·닉네임 변경·삭제를 부를 때 쓰는 비밀값. 홈페이지와 같은 값. 없으면 내부 API 꺼짐 |
+| `INTERNAL_TOKEN` | (긴 무작위 문자열) | 홈페이지 관리자 페이지가 회원 전적 조회·닉네임 변경·삭제를 부를 때 쓰는 비밀값. 홈페이지와 같은 값. 게임이 끝날 때 홈페이지 플레이 기록(`/api/internal/plays`)에 알릴 때도 씀. 없으면 내부 API · 플레이 기록 꺼짐 |
+| `HOME_PLAYS_URL` | `http://127.0.0.1:8080/api/internal/plays` | (선택) 플레이 기록을 보낼 주소. 비우면 `HOME_AUTH_URL` 에서 만듦 |
 
 ### 홈페이지 로그인
 
