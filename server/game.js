@@ -124,7 +124,7 @@ export class Game {
       p.misses++;
       if (!p.deck.length) {
         this.eliminate([p]);
-        this.notice = `${p.nickname}님 오답 · 줄 카드가 없어 탈락`;
+        this.notice = `${p.nickname} 반칙! · 줄 카드가 없어 탈락`;
         if (this.turn < 0 || !this.players[this.turn]?.deck.length) this.nextTurn(this.turn < 0 ? this.players.indexOf(p) : this.turn, now);
       } else {
         // one card for every other player still in the game, clockwise, as long as the hitter has cards
@@ -133,7 +133,7 @@ export class Game {
           const other = this.players[(index + step) % this.players.length];
           if (other.status !== 'out') to.push(other.id);
         }
-        this.notice = `${p.nickname}님 오답 · 한 장씩 나눠 주는 중`;
+        this.notice = `${p.nickname} 반칙!`;
         if (to.length) this.startPenalty(p, to, now);
       }
     }

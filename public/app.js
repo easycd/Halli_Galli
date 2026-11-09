@@ -535,7 +535,7 @@ function updateTimer() {
   if (!el) return;
   const left = deadline ? Math.ceil((deadline - Date.now() - offset) / 1000) : 0;
   // past the deadline while still playing: five of a fruit is on the table, nothing is played until the bell
-  el.textContent = g?.penalty ? '벌칙 카드 나눠 주는 중 · 잠시 멈춤' : !deadline ? '뒤집을 카드 없음' : left > 0 ? `자동 뒤집기 ${left}초` : '종을 쳐야 다음 카드를 내요';
+  el.textContent = g?.penalty ? '잠시 멈춤' : !deadline ? '뒤집을 카드 없음' : left > 0 ? `자동 뒤집기 ${left}초` : '종을 쳐야 다음 카드를 내요';
 }
 setInterval(updateTimer, 250);
 async function command(path, data = {}) {
