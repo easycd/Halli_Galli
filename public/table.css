@@ -191,3 +191,16 @@
 .chat-msg.colored{background:color-mix(in srgb,var(--name-bg) 42%,transparent);border-left:4px solid var(--name-bg);border-radius:10px;padding:7px 10px;margin:0 0 6px}
 .chat-msg.colored .chat-meta strong{background:var(--name-bg);color:#283b31;border-radius:6px;padding:1px 7px}
 .chat-msg.colored p{color:#3b3226}
+
+/* ── 2026-11 phone audit ──
+   The bell keeps its small look (40%), but a finger only has to land near it: an invisible ring makes the tap area about 100px.
+   My deck gets the same (about 56x71 before the table scale). Inputs are 16px so iPhone does not zoom in on focus. */
+.game-center .bell-control::after{content:"";position:absolute;inset:-28px;border-radius:50%}
+.game-center .seat.mine .hidden-deck::after{inset:-14px}
+@media(max-width:650px){
+  .game-center .bell-control::after{inset:-27px}
+  .top-actions .text-button{min-width:40px;justify-content:center}
+  input,select,textarea{font-size:16px!important}
+  .game-center .seat-name,.game-center .seat-status{font-size:10px}.game-center .seat-name .tag-status,.game-center .seat-name .turn-tag{font-size:9px}
+}
+@media(max-width:480px){.topbar .brand-name{display:none}}
