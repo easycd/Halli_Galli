@@ -229,7 +229,7 @@ function leaderboard() {
 }
 function chatPanel(channel) {
   const messages = channel === 'global' ? state.messages : state.room.messages;
-  return `<section class="glass panel chat-panel" aria-label="${channel === 'global' ? '전체' : '룸'} 채팅"><div class="panel-header section-heading"><div class="section-title">${icon('chat')}<h3>${channel === 'global' ? '전체 채팅' : '룸 채팅'}</h3></div><span class="count">${channel === 'global' ? state.online.length : state.room.players.length}</span></div><div class="chat-body" data-chat="${channel}" role="log" aria-label="채팅 메시지">${messages.length ? messages.map(m => `<div class="chat-msg ${m.system ? 'system' : ''}${Number.isInteger(m.color) ? ' colored' : ''}"${Number.isInteger(m.color) ? ` style="--name-bg:${NAME_COLORS[m.color % NAME_COLORS.length]}"` : ''}><div class="chat-meta"><strong>${escape(m.nickname)}</strong><time>${new Date(m.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></div><p>${escape(m.text)}</p></div>`).join('') : `<div class="chat-empty">${icon('chat')}<span>메시지 없음</span></div>`}</div><form class="chat-form" data-channel="${channel}"><label class="sr-only" for="chat-${channel}">메시지</label><input id="chat-${channel}" name="message" autocomplete="off" maxlength="200" placeholder="메시지를 입력하세요" value="${escape(drafts[channel])}" required><button type="submit" aria-label="메시지 보내기">${icon('send')}</button></form></section>`;
+  return `<section class="glass panel chat-panel" aria-label="${channel === 'global' ? '전체' : '룸'} 채팅"><div class="panel-header section-heading"><div class="section-title">${icon('chat')}<h3>${channel === 'global' ? '전체 채팅' : '룸 채팅'}</h3></div><span class="count">${channel === 'global' ? state.online.length : state.room.players.length}</span></div><div class="chat-body" data-chat="${channel}" role="log" aria-label="채팅 메시지">${messages.length ? messages.map(m => m.foul ? `<div class="chat-msg foul"><p>${escape(m.text)}</p></div>` : `<div class="chat-msg ${m.system ? 'system' : ''}${Number.isInteger(m.color) ? ' colored' : ''}"${Number.isInteger(m.color) ? ` style="--name-bg:${NAME_COLORS[m.color % NAME_COLORS.length]}"` : ''}><div class="chat-meta"><strong>${escape(m.nickname)}</strong><time>${new Date(m.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></div><p>${escape(m.text)}</p></div>`).join('') : `<div class="chat-empty">${icon('chat')}<span>메시지 없음</span></div>`}</div><form class="chat-form" data-channel="${channel}"><label class="sr-only" for="chat-${channel}">메시지</label><input id="chat-${channel}" name="message" autocomplete="off" maxlength="200" placeholder="메시지를 입력하세요" value="${escape(drafts[channel])}" required><button type="submit" aria-label="메시지 보내기">${icon('send')}</button></form></section>`;
 }
 function presencePanel(room = false) {
   const players = room ? state.room.players : state.online;
@@ -342,15 +342,12 @@ function playTurnArrow() {
 function penaltyMarkup() {
   const g = state.room.game, pen = g?.penalty;
   if (!pen || g.phase !== 'playing') return '';
-  const giver = g.players.find(p => p.id === pen.from);
-  return `<div class="penalty-layer" data-penalty="${pen.id}" aria-hidden="true"><div class="penalty-banner">${escape(giver?.nickname ?? '')} 반칙!</div>${pen.to.map((id, i) => `<div class="penalty-card card-back" data-to="${escape(id)}" data-order="${i}"><span class="deck-pattern"></span></div>`).join('')}</div>`;
+  return `<div class="penalty-layer" data-penalty="${pen.id}" aria-hidden="true">${pen.to.map((id, i) => `<div class="penalty-card card-back" data-to="${escape(id)}" data-order="${i}"><span class="deck-pattern"></span></div>`).join('')}</div>`;
 }
 function playPenalty() {
   const layer = document.querySelector('.penalty-layer'), pen = state?.room?.game?.penalty;
   if (!layer || !pen) return;
   const elapsed = Date.now() + offset - pen.startedAt;
-  const banner = layer.querySelector('.penalty-banner');
-  if (elapsed < 400) banner.animate([{ opacity: 0, transform: 'translate(-50%,10px) scale(.9)' }, { opacity: 1, transform: 'translate(-50%,0) scale(1)' }], { duration: 400, delay: -elapsed, easing: 'cubic-bezier(.2,.8,.3,1.2)', fill: 'both' });
   const cards = layer.querySelectorAll('.penalty-card');
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) { cards.forEach(el => el.remove()); return; }
   const size = document.querySelector('.game-table').offsetWidth;
@@ -474,7 +471,7 @@ function playCollections() {
 }
 function waitingOverlay() {
   const r = state.room, g = r.game;
-  if (!g) return `<div class="waiting-overlay"><h2>게임 준비</h2><p>${r.players.length < 2 ? '2명부터 시작할 수 있어요' : `준비 ${r.players.filter(p => p.ready).length} / ${r.players.length}`}</p><span class="pill">${endingLabel(r.settings.ending)}</span></div>`;
+  if (!g) return `<div class="waiting-overlay"><h2>게임 준비</h2><p>${r.players.length < 2 ? '2명부터 시작할 수 있어요' : `준비 ${r.players.filter(p => p.ready).length} / ${r.players.length}`}</p><span class="pill">${endingLabel(r.settings.ending)}</span>${readyButton()}</div>`;
   if (g.phase === 'spinning') {
     // each slice has the player's own colour (the same as their name tag), the name sits in the middle of the slice,
     // and the wheel stops with the middle of the starter's slice under the pointer
@@ -484,6 +481,10 @@ function waitingOverlay() {
   }
   return '';
 }
+function readyButton() {
+  const ready = state.room.players.find(p => p.id === state.me.id).ready;
+  return `<div class="game-controls"><button class="button primary ready-action ${ready ? 'is-ready' : ''}" data-do="ready" aria-pressed="${ready}">${ready ? '준비 취소' : '준비 완료'}</button></div>`;
+}
 function resultsOverlay() {
   const g = state.room.game;
   if (g?.phase !== 'finished' || (activeCollection && Date.now() - activeCollection.startedAt < 1500)) return '';
@@ -492,7 +493,7 @@ function resultsOverlay() {
 function gamePage() {
   const r = state.room, g = r.game, me = g?.players.find(p => p.id === state.me.id), waiting = !g;
   const canRing = g?.phase === 'playing' && !g.penalty && me && me.status !== 'out';
-  return `<div class="app-shell">${header()}<main id="main"><div class="room-top"><div><h1>${escape(r.name)}</h1><div class="room-tags"><span>${r.settings.mode === 'original' ? '원본 56장' : `한 명당 ${r.settings.cards}장`}</span><span>${endingLabel(r.settings.ending)}</span><span>${r.players.length}/${r.settings.max}명</span></div></div><button class="button secondary" data-do="leave">나가기 ${icon('logout')}</button></div><div class="game-layout">${chatPanel('room')}<section class="glass game-center" aria-label="게임판">${pingMarkup()}<div class="table-meta"><div class="game-status">${g?.phase === 'playing' ? `<span class="pill"><i class="dot"></i>${g.turn >= 0 ? `${g.players[g.turn].id === state.me.id ? '내' : `${escape(g.players[g.turn].nickname)}님`} 차례` : '종 판정 대기'}</span><br><span id="turn-timer"></span>` : '<span class="pill">준비 시간</span>'}</div></div><div class="table-stage"><div class="game-table"><div class="table-ring"></div>${turnArrow()}${seats()}${collectionMarkup()}${penaltyMarkup()}${ringMarkup()}<button class="bell-control" data-do="ring" ${canRing ? '' : 'disabled'} aria-label="종 누르기, 스페이스 키">${bellArt()}</button></div></div>${waitingOverlay()}${g?.phase === 'announcing' ? `<div class="start-popup" role="status">${escape(g.players[g.starter].nickname)}님부터</div>` : ''}<div class="game-controls"><p class="notice-bar" role="status">${escape(g?.notice ?? '모두 준비하면 시작해요')}</p><div class="controls-right"><button class="button secondary" data-do="rules" aria-label="게임 방법">${icon('help')}</button>${waiting ? `<button class="button primary ready-action ${r.players.find(p => p.id === state.me.id).ready ? 'is-ready' : ''}" data-do="ready" aria-pressed="${r.players.find(p => p.id === state.me.id).ready}">${r.players.find(p => p.id === state.me.id).ready ? '준비 취소' : '준비 완료'}</button>` : ''}</div></div>${resultsOverlay()}</section>${presencePanel(true)}</div></main>${footer()}</div>`;
+  return `<div class="app-shell">${header()}<main id="main"><div class="room-top"><div><h1>${escape(r.name)}</h1><div class="room-tags"><span>${r.settings.mode === 'original' ? '원본 56장' : `한 명당 ${r.settings.cards}장`}</span><span>${endingLabel(r.settings.ending)}</span><span>${r.players.length}/${r.settings.max}명</span></div></div><button class="button secondary" data-do="leave">나가기 ${icon('logout')}</button></div><div class="game-layout">${chatPanel('room')}<section class="glass game-center" aria-label="게임판">${pingMarkup()}<div class="table-meta"><div class="game-status">${g?.phase === 'playing' ? `<span class="pill"><i class="dot"></i>${g.turn >= 0 ? `${g.players[g.turn].id === state.me.id ? '내' : `${escape(g.players[g.turn].nickname)}님`} 차례` : '종 판정 대기'}</span><br><span id="turn-timer"></span>` : '<span class="pill">준비 시간</span>'}</div></div><div class="table-stage"><div class="game-table"><div class="table-ring"></div>${turnArrow()}${seats()}${collectionMarkup()}${penaltyMarkup()}${ringMarkup()}<button class="bell-control" data-do="ring" ${canRing ? '' : 'disabled'} aria-label="종 누르기, 스페이스 키">${bellArt()}</button></div></div>${waitingOverlay()}${g?.phase === 'announcing' ? `<div class="start-popup" role="status">${escape(g.players[g.starter].nickname)}님부터</div>` : ''}<p class="sr-only" role="status">${escape(g?.notice ?? '')}</p>${resultsOverlay()}</section>${presencePanel(true)}</div></main>${footer()}</div>`;
 }
 function render() {
   if (composing) { renderPending = true; return; }

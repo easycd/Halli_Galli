@@ -226,10 +226,18 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
             const name = names.find(n => !room.players.some(p => p.nickname === `${n} 봇`));
             room.players.push({ id: randomUUID(), nickname: `${name} 봇`, bot: true, ready: true, color: pickColor(room) }); break;
           }
-          case '/api/action':
+          case '/api/action': {
             if (!room?.game || data.gameId !== room.game.id) throw new Error('현재 경기를 찾을 수 없어요.');
+            const ringBefore = room.game.lastRing;
             room.game.act(user.id, data.action, data.actionId, data.version);
+            // a wrong bell shows up in the room chat as a red line: "<name> 반칙!"
+            const ring = room.game.lastRing;
+            if (ring && ring !== ringBefore && !ring.ok) {
+              room.messages.push({ id: randomUUID(), nickname: ring.nickname, text: `${ring.nickname} 반칙!`, at: Date.now(), system: true, foul: true });
+              if (room.messages.length > 100) room.messages.shift();
+            }
             room.botAt = Date.now() + 650 + randomInt(650); record(room); break;
+          }
           case '/api/hold':
             if (!room?.game || data.gameId !== room.game.id) throw new Error('현재 경기를 찾을 수 없어요.');
             if (!room.game.hold(user.id, data.on === true)) return json(200, { ok: true });
