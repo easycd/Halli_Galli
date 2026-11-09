@@ -86,3 +86,19 @@ export function collectionKeyframes(source, winner, size, offset) {
     { left: `${to.x}px`, top: `${to.y}px`, transform: transform(winner.rotation, .76, 180), opacity: 0, offset: 1 },
   ];
 }
+
+// A wrong bell: one card leaves the hitter's deck, stops in the middle of the table, then goes into another deck.
+// Turns are taken the short way round (a seat at 270° is -90°), so a card never spins all the way round.
+export function penaltyKeyframes(from, to, size, offset) {
+  const deck = s => ({ x: size * s.x / 100 + s.dx * offset, y: size * s.y / 100 + s.dy * offset });
+  const turn = r => { const n = ((r % 360) + 360) % 360; return n > 180 ? n - 360 : n; };
+  const a = deck(from), b = deck(to), c = size / 2;
+  const t = (angle, scale) => `translate(-50%, -50%) rotate(${angle}deg) scale(${scale})`;
+  return [
+    { left: `${a.x}px`, top: `${a.y}px`, transform: t(turn(from.rotation), 1), opacity: 1, offset: 0 },
+    { left: `${c}px`, top: `${c}px`, transform: t(0, 1.35), opacity: 1, offset: .38 },
+    { left: `${c}px`, top: `${c}px`, transform: t(0, 1.35), opacity: 1, offset: .55 },
+    { left: `${b.x}px`, top: `${b.y}px`, transform: t(turn(to.rotation), 1), opacity: 1, offset: .94 },
+    { left: `${b.x}px`, top: `${b.y}px`, transform: t(turn(to.rotation), 1), opacity: 0, offset: 1 },
+  ];
+}

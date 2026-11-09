@@ -161,6 +161,8 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
         url.pathname = url.pathname.slice(base.length - 1);
       }
       if (url.pathname.startsWith('/internal/')) return internal(req, res, url, json);
+      // the game screen measures its ping (round trip to this server) with this tiny request; no login needed
+      if (url.pathname === '/ping' && req.method === 'GET') { res.writeHead(204, { 'Cache-Control': 'no-store' }); return res.end(); }
       let user = null;
       if (url.pathname.startsWith('/api/')) {
         try { const member = await verifySession(req.headers.cookie); if (member) user = accounts.ensure(member); }
@@ -271,7 +273,9 @@ export async function createApp({ dataDir = process.env.HG_DATA_DIR || fileURLTo
       }
       const g = room.game; if (!g) continue;
       if (g.tick(now)) changed = true;
-      if (g.phase === 'playing' && now >= room.botAt) {
+      // while a wrong bell is being paid out the game is paused: bots wait until a little after it ends
+      if (g.penalty) room.botAt = Math.max(room.botAt, g.penalty.until + 600);
+      else if (g.phase === 'playing' && now >= room.botAt) {
         if (g.canRing()) {
           const bots = g.players.filter(p => p.bot && p.status !== 'out');
           if (bots.length) { g.ring(bots[randomInt(bots.length)].id, now); changed = true; }

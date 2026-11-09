@@ -204,3 +204,19 @@
   .game-center .seat-name,.game-center .seat-status{font-size:10px}.game-center .seat-name .tag-status,.game-center .seat-name .turn-tag{font-size:9px}
 }
 @media(max-width:480px){.topbar .brand-name{display:none}}
+
+/* ── Wrong bell: the game pauses while the hitter's cards fly out one by one ── */
+.penalty-layer{position:absolute;inset:0;pointer-events:none;z-index:16;overflow:visible}
+.penalty-card{position:absolute;left:0;top:0;width:49px;height:76px;border-radius:5px;border:2px solid #fffcf5;opacity:0;background-color:#e6b7d2;background-image:repeating-linear-gradient(40deg,transparent 0 7px,#a7548830 7px 8px,transparent 8px 16px);box-shadow:0 10px 18px #001e1673}
+.penalty-banner{position:absolute;top:9%;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:13px;background:#ffe3dc;color:#5a2a1e;border:1px solid #f4b6ae;box-shadow:0 6px 18px #00291d55;white-space:nowrap;font-size:14px;font-weight:650}
+.penalty-banner strong{color:#a33e2c}
+.penalty-banner small{padding:2px 7px;border-radius:7px;background:#5a2a1e;color:#fff3ec;font-size:11px;font-weight:650}
+@media(max-width:650px){.penalty-card{width:28px;height:43px;border-radius:4px}.penalty-banner{top:21%;padding:7px 11px;font-size:11px;gap:5px}.penalty-banner small{font-size:9px}}
+
+/* ── Ping, top left of the table ── */
+.game-center .ping-chip{position:absolute;top:14px;left:16px;z-index:5;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#113f30;color:#eef6e9;border:1px solid #78a28b66;font-size:12px;font-weight:650;font-variant-numeric:tabular-nums;pointer-events:none}
+.game-center .ping-chip .dot{width:8px;height:8px;border-radius:50%;background:#9fb3a8}
+.game-center .ping-chip.good .dot{background:#7fe08a}
+.game-center .ping-chip.fair .dot{background:#f2d36b}
+.game-center .ping-chip.poor .dot{background:#ff7a66}
+@media(max-width:650px){.game-center .ping-chip{top:10px;left:10px;font-size:10px;padding:3px 8px}}
