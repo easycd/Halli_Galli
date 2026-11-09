@@ -58,6 +58,8 @@ test('homepage login, real room/chat APIs, internal admin API and access boundar
   assert.ok((await script.text()).includes(`./table-layout.js?v=${state.body.build}`));
   assert.match(script.headers.get('cache-control'), /immutable/);
   assert.equal((await fetch(`${base}/table.css`)).headers.get('cache-control'), 'no-cache');
+  // the ping the game screen shows: a tiny uncached answer, no login needed
+  const ping = await fetch(`${base}/ping`); assert.equal(ping.status, 204); assert.equal(ping.headers.get('cache-control'), 'no-store');
   const b = home.signIn('다른친구');
   assert.equal((await request('/api/join', { roomId: room.body.room.id }, b.cookie)).status, 400);
   assert.equal((await request('/api/state', undefined, b.cookie)).body.room, null);

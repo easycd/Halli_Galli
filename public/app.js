@@ -1,4 +1,4 @@
-import { seatGeometry, flipKeyframes, liftKeyframes, labelTurn, stackLevel, detectCollection, collectionKeyframes, NAME_COLORS } from './table-layout.js';
+import { seatGeometry, flipKeyframes, liftKeyframes, labelTurn, stackLevel, detectCollection, collectionKeyframes, penaltyKeyframes, NAME_COLORS } from './table-layout.js';
 const $ = (selector, root = document) => root.querySelector(selector);
 const app = $('#app');
 const fruitNames = { strawberry: '딸기', banana: '바나나', lime: '라임', plum: '자두' };
@@ -40,6 +40,7 @@ let myHold = null;            // { startedAt, pointerId, rect, sent } while I pr
 const lifts = new Map();      // playerId → { startedAt, down } : a held card going up, or (down) going back
 const LIFT_MS = 170;
 let celebrated = null;   // the game I last showed winner fireworks for
+let ping = null;         // round trip to the server in ms (null: not measured yet, or it failed)
 function background() {
   $('#background').innerHTML = Array.from({ length: 12 }, (_, i) => {
     const seed = crypto.getRandomValues(new Uint32Array(3));
@@ -228,7 +229,7 @@ function leaderboard() {
 }
 function chatPanel(channel) {
   const messages = channel === 'global' ? state.messages : state.room.messages;
-  return `<section class="glass panel chat-panel" aria-label="${channel === 'global' ? '전체' : '룸'} 채팅"><div class="panel-header section-heading"><div class="section-title">${icon('chat')}<h3>${channel === 'global' ? '전체 채팅' : '룸 채팅'}</h3></div><span class="count">${channel === 'global' ? state.online.length : state.room.players.length}</span></div><div class="chat-body" data-chat="${channel}" role="log" aria-label="채팅 메시지">${messages.length ? messages.map(m => `<div class="chat-msg ${m.system ? 'system' : ''}${Number.isInteger(m.color) ? ' colored' : ''}"${Number.isInteger(m.color) ? ` style="--name-bg:${NAME_COLORS[m.color % NAME_COLORS.length]}"` : ''}><div class="chat-meta"><strong>${escape(m.nickname)}</strong><time>${new Date(m.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></div><p>${escape(m.text)}</p></div>`).join('') : `<div class="chat-empty">${icon('chat')}<span>메시지 없음</span></div>`}</div><form class="chat-form" data-channel="${channel}"><label class="sr-only" for="chat-${channel}">메시지</label><input id="chat-${channel}" name="message" autocomplete="off" maxlength="200" placeholder="메시지를 입력하세요" value="${escape(drafts[channel])}" required><button type="submit" aria-label="메시지 보내기">${icon('send')}</button></form></section>`;
+  return `<section class="glass panel chat-panel" aria-label="${channel === 'global' ? '전체' : '룸'} 채팅"><div class="panel-header section-heading"><div class="section-title">${icon('chat')}<h3>${channel === 'global' ? '전체 채팅' : '룸 채팅'}</h3></div><span class="count">${channel === 'global' ? state.online.length : state.room.players.length}</span></div><div class="chat-body" data-chat="${channel}" role="log" aria-label="채팅 메시지">${messages.length ? messages.map(m => m.foul ? `<div class="chat-msg foul"><p>${escape(m.text)}</p></div>` : `<div class="chat-msg ${m.system ? 'system' : ''}${Number.isInteger(m.color) ? ' colored' : ''}"${Number.isInteger(m.color) ? ` style="--name-bg:${NAME_COLORS[m.color % NAME_COLORS.length]}"` : ''}><div class="chat-meta"><strong>${escape(m.nickname)}</strong><time>${new Date(m.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></div><p>${escape(m.text)}</p></div>`).join('') : `<div class="chat-empty">${icon('chat')}<span>메시지 없음</span></div>`}</div><form class="chat-form" data-channel="${channel}"><label class="sr-only" for="chat-${channel}">메시지</label><input id="chat-${channel}" name="message" autocomplete="off" maxlength="200" placeholder="메시지를 입력하세요" value="${escape(drafts[channel])}" required><button type="submit" aria-label="메시지 보내기">${icon('send')}</button></form></section>`;
 }
 function presencePanel(room = false) {
   const players = room ? state.room.players : state.online;
@@ -281,7 +282,7 @@ function seats() {
     const layers = mine ? stackLevel(count) : g ? p.stack ?? 0 : stackLevel(dealt);   // others: only how thick it looks
     const hasCards = layers > 0;
     const current = g?.phase === 'playing' && g.turn === i;
-    const canFlip = mine && current && count > 0;
+    const canFlip = mine && current && count > 0 && !g.penalty;
     const tag = mine ? 'button' : 'div';
     const flip = activeFlips.get(p.id), flying = flip && Date.now() - flip.startedAt < 520;
     const tagStatus = !g ? p.ready ? '준비 완료' : '준비중' : p.status === 'out' ? '탈락' : p.status === 'recovering' && !mine ? '종으로 복귀 가능' : '';
@@ -336,6 +337,50 @@ function playTurnArrow() {
   }
   lastTurnAngle = angle;
 }
+// ── wrong bell: the game stops and the hitter's cards go out one by one (deck → middle → the other deck) ──
+// The server moves each card when its step ends, so the decks change just as the flying card lands.
+function penaltyMarkup() {
+  const g = state.room.game, pen = g?.penalty;
+  if (!pen || g.phase !== 'playing') return '';
+  return `<div class="penalty-layer" data-penalty="${pen.id}" aria-hidden="true">${pen.to.map((id, i) => `<div class="penalty-card card-back" data-to="${escape(id)}" data-order="${i}"><span class="deck-pattern"></span></div>`).join('')}</div>`;
+}
+function playPenalty() {
+  const layer = document.querySelector('.penalty-layer'), pen = state?.room?.game?.penalty;
+  if (!layer || !pen) return;
+  const elapsed = Date.now() + offset - pen.startedAt;
+  const cards = layer.querySelectorAll('.penalty-card');
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { cards.forEach(el => el.remove()); return; }
+  const size = document.querySelector('.game-table').offsetWidth;
+  const pile = parseFloat(getComputedStyle(document.querySelector('.seat')).getPropertyValue('--pile-offset'));
+  const at = id => { const el = document.querySelector(`.seat[data-seat="${CSS.escape(id)}"]`); return el && { x: +el.dataset.x, y: +el.dataset.y, dx: +el.dataset.dx, dy: +el.dataset.dy, rotation: +el.dataset.rotation }; };
+  const from = at(pen.from);
+  for (const card of cards) {
+    const to = at(card.dataset.to), start = Number(card.dataset.order) * pen.step;
+    if (!from || !to || elapsed >= start + pen.step) { card.remove(); continue; }
+    card.animate(penaltyKeyframes(from, to, size, pile), { duration: pen.step, delay: start - elapsed, easing: 'cubic-bezier(.45,.05,.3,1)', fill: 'forwards' });
+  }
+}
+// ── ping: how long a round trip to the game server takes, shown on top of the table ──
+function pingMarkup() { return '<span class="ping-chip" id="ping"><i class="dot"></i>핑 --</span>'; }
+function updatePing() {
+  const el = $('#ping'); if (!el) return;
+  el.className = `ping-chip ${ping === null ? 'none' : ping < 80 ? 'good' : ping < 160 ? 'fair' : 'poor'}`;
+  el.innerHTML = `<i class="dot"></i>핑 ${ping === null ? '--' : `${ping}ms`}`;
+  el.title = '서버까지 왕복 시간';
+}
+let pinging = false;
+async function measurePing() {
+  if (pinging || document.hidden) return;
+  pinging = true;
+  const started = performance.now();
+  try {
+    const response = await fetch(`./ping?t=${Date.now()}`, { cache: 'no-store' });
+    ping = response.ok ? Math.round(performance.now() - started) : null;
+  } catch { ping = null; }
+  finally { pinging = false; }
+  updatePing();
+}
+setInterval(() => { if (state?.room) measurePing(); }, 2000);
 // The held top card (mine while I press my deck; others' from the server), and one going back down.
 function liftMarkup(p, mine) {
   const lift = lifts.get(p.id);
@@ -426,7 +471,7 @@ function playCollections() {
 }
 function waitingOverlay() {
   const r = state.room, g = r.game;
-  if (!g) return `<div class="waiting-overlay"><h2>게임 준비</h2><p>${r.players.length < 2 ? '2명부터 시작할 수 있어요' : `준비 ${r.players.filter(p => p.ready).length} / ${r.players.length}`}</p><span class="pill">${endingLabel(r.settings.ending)}</span></div>`;
+  if (!g) return `<div class="waiting-overlay"><h2>게임 준비</h2><p>${r.players.length < 2 ? '2명부터 시작할 수 있어요' : `준비 ${r.players.filter(p => p.ready).length} / ${r.players.length}`}</p><span class="pill">${endingLabel(r.settings.ending)}</span>${readyButton()}</div>`;
   if (g.phase === 'spinning') {
     // each slice has the player's own colour (the same as their name tag), the name sits in the middle of the slice,
     // and the wheel stops with the middle of the starter's slice under the pointer
@@ -436,6 +481,10 @@ function waitingOverlay() {
   }
   return '';
 }
+function readyButton() {
+  const ready = state.room.players.find(p => p.id === state.me.id).ready;
+  return `<div class="game-controls"><button class="button primary ready-action ${ready ? 'is-ready' : ''}" data-do="ready" aria-pressed="${ready}">${ready ? '준비 취소' : '준비 완료'}</button></div>`;
+}
 function resultsOverlay() {
   const g = state.room.game;
   if (g?.phase !== 'finished' || (activeCollection && Date.now() - activeCollection.startedAt < 1500)) return '';
@@ -443,8 +492,8 @@ function resultsOverlay() {
 }
 function gamePage() {
   const r = state.room, g = r.game, me = g?.players.find(p => p.id === state.me.id), waiting = !g;
-  const canRing = g?.phase === 'playing' && me && me.status !== 'out';
-  return `<div class="app-shell">${header()}<main id="main"><div class="room-top"><div><h1>${escape(r.name)}</h1><div class="room-tags"><span>${r.settings.mode === 'original' ? '원본 56장' : `한 명당 ${r.settings.cards}장`}</span><span>${endingLabel(r.settings.ending)}</span><span>${r.players.length}/${r.settings.max}명</span></div></div><button class="button secondary" data-do="leave">나가기 ${icon('logout')}</button></div><div class="game-layout">${chatPanel('room')}<section class="glass game-center" aria-label="게임판"><div class="table-meta"><div class="game-status">${g?.phase === 'playing' ? `<span class="pill"><i class="dot"></i>${g.turn >= 0 ? `${g.players[g.turn].id === state.me.id ? '내' : `${escape(g.players[g.turn].nickname)}님`} 차례` : '종 판정 대기'}</span><br><span id="turn-timer"></span>` : '<span class="pill">준비 시간</span>'}</div></div><div class="table-stage"><div class="game-table"><div class="table-ring"></div>${turnArrow()}${seats()}${collectionMarkup()}${ringMarkup()}<button class="bell-control" data-do="ring" ${canRing ? '' : 'disabled'} aria-label="종 누르기, 스페이스 키">${bellArt()}</button></div></div>${waitingOverlay()}${g?.phase === 'announcing' ? `<div class="start-popup" role="status">${escape(g.players[g.starter].nickname)}님부터</div>` : ''}<div class="game-controls"><p class="notice-bar" role="status">${escape(g?.notice ?? '모두 준비하면 시작해요')}</p><div class="controls-right"><button class="button secondary" data-do="rules" aria-label="게임 방법">${icon('help')}</button>${waiting ? `<button class="button primary ready-action ${r.players.find(p => p.id === state.me.id).ready ? 'is-ready' : ''}" data-do="ready" aria-pressed="${r.players.find(p => p.id === state.me.id).ready}">${r.players.find(p => p.id === state.me.id).ready ? '준비 취소' : '준비 완료'}</button>` : ''}</div></div>${resultsOverlay()}</section>${presencePanel(true)}</div></main>${footer()}</div>`;
+  const canRing = g?.phase === 'playing' && !g.penalty && me && me.status !== 'out';
+  return `<div class="app-shell">${header()}<main id="main"><div class="room-top"><div><h1>${escape(r.name)}</h1><div class="room-tags"><span>${r.settings.mode === 'original' ? '원본 56장' : `한 명당 ${r.settings.cards}장`}</span><span>${endingLabel(r.settings.ending)}</span><span>${r.players.length}/${r.settings.max}명</span></div></div><button class="button secondary" data-do="leave">나가기 ${icon('logout')}</button></div><div class="game-layout">${chatPanel('room')}<section class="glass game-center" aria-label="게임판">${pingMarkup()}<div class="table-meta"><div class="game-status">${g?.phase === 'playing' ? `<span class="pill"><i class="dot"></i>${g.turn >= 0 ? `${g.players[g.turn].id === state.me.id ? '내' : `${escape(g.players[g.turn].nickname)}님`} 차례` : '종 판정 대기'}</span><br><span id="turn-timer"></span>` : '<span class="pill">준비 시간</span>'}</div></div><div class="table-stage"><div class="game-table"><div class="table-ring"></div>${turnArrow()}${seats()}${collectionMarkup()}${penaltyMarkup()}${ringMarkup()}<button class="bell-control" data-do="ring" ${canRing ? '' : 'disabled'} aria-label="종 누르기, 스페이스 키">${bellArt()}</button></div></div>${waitingOverlay()}${g?.phase === 'announcing' ? `<div class="start-popup" role="status">${escape(g.players[g.starter].nickname)}님부터</div>` : ''}<p class="sr-only" role="status">${escape(g?.notice ?? '')}</p>${resultsOverlay()}</section>${presencePanel(true)}</div></main>${footer()}</div>`;
 }
 function render() {
   if (composing) { renderPending = true; return; }
@@ -456,7 +505,7 @@ function render() {
   document.body.classList.toggle('in-game', !!state?.room);
   document.body.classList.toggle('paused', paused);
   app.innerHTML = state ? state.room ? gamePage() : lobbyPage() : authPage();
-  fitTable(); updateConnection(); updateTimer(); playCardFlips(); playLifts(); playCollections(); playTurnArrow(); playRing();
+  fitTable(); updateConnection(); updateTimer(); updatePing(); playCardFlips(); playLifts(); playCollections(); playPenalty(); playTurnArrow(); playRing();
   document.querySelectorAll('[data-chat]').forEach(el => { const old = scrolls[el.dataset.chat]; el.scrollTop = old && !old.bottom ? old.top : el.scrollHeight; });
   if (focusedId && document.getElementById(focusedId)) {
     const target = document.getElementById(focusedId); target.focus({ preventScroll: true });
@@ -466,6 +515,7 @@ function render() {
   if (roomId !== lastRoom || (phase === 'finished' && lastPhase !== phase)) {
     $('#main')?.setAttribute('tabindex', '-1'); $('#main')?.focus({ preventScroll: true });
   }
+  if (roomId && roomId !== lastRoom) measurePing();
   lastRoom = roomId; lastPhase = phase;
 }
 // The table keeps one shape at every screen size: the game area fills the window height (big screens get a big
@@ -482,8 +532,11 @@ function fitTable() {
 }
 addEventListener('resize', () => { if (state?.room) fitTable(); });
 function updateTimer() {
-  const el = $('#turn-timer'), deadline = state?.room?.game?.deadline;
-  if (el) el.textContent = deadline ? `자동 뒤집기 ${Math.max(0, Math.ceil((deadline - Date.now() - offset) / 1000))}초` : '뒤집을 카드 없음';
+  const el = $('#turn-timer'), g = state?.room?.game, deadline = g?.deadline;
+  if (!el) return;
+  const left = deadline ? Math.ceil((deadline - Date.now() - offset) / 1000) : 0;
+  // past the deadline while still playing: five of a fruit is on the table, nothing is played until the bell
+  el.textContent = g?.penalty ? '잠시 멈춤' : !deadline ? '뒤집을 카드 없음' : left > 0 ? `자동 뒤집기 ${left}초` : '종을 쳐야 다음 카드를 내요';
 }
 setInterval(updateTimer, 250);
 async function command(path, data = {}) {
@@ -496,6 +549,7 @@ async function command(path, data = {}) {
 function action(type) {
   const g = state?.room?.game;
   if (!g || !connected) { if (!connected) toast('서버에 다시 연결되면 입력할 수 있어요.'); return; }
+  if (g.penalty) return;   // the game is paused for a foul: extra presses do nothing
   return command('action', { gameId: g.id, action: type, actionId: crypto.randomUUID(), version: g.version });
 }
 document.addEventListener('click', async event => {

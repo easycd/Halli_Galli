@@ -51,13 +51,13 @@ test('last-card player can ring to return; someone else winning eliminates after
 test('wrong bell pays clockwise, can restore a recovering player and conserves cards', () => {
   const g = fixture();
   g.players[1].deck = []; g.players[1].status = 'recovering';
-  const before = total(g); g.ring('p0');
+  const before = total(g); g.ring('p0'); g.finishPenalty();
   assert.equal(g.players[0].deck.length, 8); assert.equal(g.players[1].deck.length, 1);
   assert.equal(g.players[1].status, 'active'); assert.equal(total(g), before);
 });
 test('penalty shortage becomes recovery, wrong ring with no cards eliminates', () => {
   const g = fixture(); g.players[0].deck = [card('lime', 2)];
-  g.ring('p0'); assert.equal(g.players[0].status, 'recovering');
+  g.ring('p0'); g.finishPenalty(); assert.equal(g.players[0].status, 'recovering');
   g.ring('p0'); assert.equal(g.players[0].status, 'out'); assert.equal(g.phase, 'playing');
   assert.throws(() => g.ring('p0'));
 });
@@ -99,7 +99,7 @@ test('many complete 2-8 person games preserve every card through penalties and r
     g.phase = 'playing';
     for (let step = 0; step < 20000 && g.phase === 'playing'; step++) {
       const eligible = g.players.filter(p => p.status !== 'out');
-      if (g.canRing() || pick(18) === 0) g.ring(eligible[pick(eligible.length)].id, step);
+      if (g.canRing() || pick(18) === 0) { g.ring(eligible[pick(eligible.length)].id, step); g.finishPenalty(step); }
       else if (g.turn >= 0) g.flip(g.players[g.turn].id, step);
       else g.checkStalemate();
       assert.equal(total(g), count * 5);
@@ -199,4 +199,70 @@ test('everyone sees how thick each deck is, not the count', () => {
   const view = g.snapshot('p1').players;
   assert.equal(view[0].cards, null);
   assert.ok(view[0].stack > view[1].stack && view[1].stack > 0);
+});
+
+test('five of a fruit on the table: no card can be played (not even by the timer) until someone hits the bell', () => {
+  const g = fixture(3);
+  g.players[1].open = [card('banana', 5)]; g.deadline = 100;
+  const top = g.players[0].open.length, deck = g.players[0].deck.length;
+  assert.throws(() => g.flip('p0', 0), /종/);
+  assert.equal(g.hold('p0', true), false, 'the card cannot even be picked up');
+  assert.equal(g.tick(5000), false); assert.equal(g.players[0].open.length, top); assert.equal(g.players[0].deck.length, deck);
+  g.ring('p2', 5000);
+  assert.equal(g.turn, 2); g.flip('p2', 5100); assert.equal(g.players[2].open.length, 1);
+});
+
+test('a wrong bell pauses the game while the cards go out one by one to the others', () => {
+  const g = fixture(4); g.turn = 1; g.deadline = 7000;
+  const before = total(g), decks = () => g.players.map(p => p.deck.length);
+  g.ring('p0', 1000);
+  assert.deepEqual(g.penalty.to, ['p1', 'p2', 'p3'], 'clockwise from the hitter');
+  assert.deepEqual(decks(), [10, 10, 10, 10], 'no card has moved yet');
+  assert.equal(g.snapshot('p2').penalty.from, 'p0');
+  assert.throws(() => g.flip('p1', 1100), /벌칙/); assert.throws(() => g.ring('p2', 1100), /벌칙/);
+  assert.equal(g.hold('p1', true), false);
+  assert.equal(g.deadline, null, 'the turn clock is stopped');
+  assert.equal(g.tick(1000 + 799), false);
+  assert.equal(g.tick(1000 + 800), true); assert.deepEqual(decks(), [9, 11, 10, 10]);
+  g.tick(1000 + 2400); assert.deepEqual(decks(), [7, 11, 11, 11]);
+  assert.ok(g.penalty, 'still paused for the last card to settle');
+  g.tick(g.penalty.until);
+  assert.equal(g.penalty, null); assert.equal(g.snapshot().penalty, null);
+  assert.equal(g.turn, 1); assert.equal(g.deadline, 3700 + 6000, 'the clock carries on with the time that was left');
+  assert.equal(total(g), before);
+  g.flip('p1', 4000);
+});
+
+test('the hitter with fewer cards than players gives what they have, then waits to recover', () => {
+  const g = fixture(4); g.players[0].deck = [card('lime', 1), card('lime', 2)];
+  g.ring('p0', 0); assert.deepEqual(g.penalty.to, ['p1', 'p2']);
+  g.tick(g.penalty.until);
+  assert.equal(g.players[0].status, 'recovering'); assert.equal(g.players[0].deck.length, 0);
+});
+
+test('someone leaving during a penalty pays it out at once', () => {
+  const g = fixture(3); g.ring('p0', 0);
+  g.removePlayer('p2', 100);
+  assert.equal(g.penalty, null);
+  assert.deepEqual(g.players.map(p => p.deck.length), [8, 11]);
+});
+
+test('mashing a wrong bell is one foul, and of several wrong bells only the first one counts', () => {
+  const g = fixture(3); const v = g.version;
+  g.act('p0', 'ring', 'a1', v, 0);
+  assert.equal(g.players[0].misses, 1); assert.ok(g.penalty);
+  // the same player again, sent before seeing the result (old version) and after it (during the pause)
+  assert.equal(g.act('p0', 'ring', 'a2', v, 50).ignored, true);
+  assert.equal(g.act('p0', 'ring', 'a3', g.version, 60).ignored, true);
+  // another player who also hit too early: first one wins the foul, theirs is dropped
+  assert.equal(g.act('p1', 'ring', 'b1', v, 70).ignored, true);
+  assert.equal(g.act('p1', 'ring', 'b2', g.version, 80).ignored, true);
+  assert.equal(g.act('p1', 'flip', 'b3', g.version, 80).ignored, true);
+  assert.deepEqual(g.players.map(p => p.misses), [1, 0, 0]);
+  g.tick(g.penalty.until);
+  assert.deepEqual(g.players.map(p => p.deck.length), [8, 11, 11], 'only p0 paid, once');
+  assert.equal(g.penalty, null);
+  // right after the pause, a press still aimed at the old table is dropped too
+  assert.deepEqual(g.act('p1', 'ring', 'b4', v, 5000), { stale: true });
+  assert.deepEqual(g.players.map(p => p.misses), [1, 0, 0]);
 });
