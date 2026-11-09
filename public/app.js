@@ -549,6 +549,7 @@ async function command(path, data = {}) {
 function action(type) {
   const g = state?.room?.game;
   if (!g || !connected) { if (!connected) toast('서버에 다시 연결되면 입력할 수 있어요.'); return; }
+  if (g.penalty) return;   // the game is paused for a foul: extra presses do nothing
   return command('action', { gameId: g.id, action: type, actionId: crypto.randomUUID(), version: g.version });
 }
 document.addEventListener('click', async event => {

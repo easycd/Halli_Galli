@@ -239,6 +239,11 @@ export class Game {
     if (typeof actionId !== 'string' || actionId.length > 100 || !actionId) throw new Error('잘못된 입력 ID예요.');
     const key = `${id}:${actionId}`;
     if (this.actions.has(key)) return this.actions.get(key);
+    // While a wrong bell is being paid out, more presses (the same player mashing, or someone else who also hit
+    // too early) count for nothing: only the first wrong bell is a foul. They are dropped quietly, not as errors.
+    if (this.penalty && (action === 'ring' || action === 'flip')) return { ignored: true, version: this.version };
+    // A press aimed at a table that has changed since (e.g. a second bell sent before the first one's result
+    // reached that player) is dropped too, so two quick presses never make two fouls.
     if (version !== this.version) return { stale: true };
     if (action === 'flip') this.flip(id, now);
     else if (action === 'ring') this.ring(id, now);

@@ -246,3 +246,23 @@ test('someone leaving during a penalty pays it out at once', () => {
   assert.equal(g.penalty, null);
   assert.deepEqual(g.players.map(p => p.deck.length), [8, 11]);
 });
+
+test('mashing a wrong bell is one foul, and of several wrong bells only the first one counts', () => {
+  const g = fixture(3); const v = g.version;
+  g.act('p0', 'ring', 'a1', v, 0);
+  assert.equal(g.players[0].misses, 1); assert.ok(g.penalty);
+  // the same player again, sent before seeing the result (old version) and after it (during the pause)
+  assert.equal(g.act('p0', 'ring', 'a2', v, 50).ignored, true);
+  assert.equal(g.act('p0', 'ring', 'a3', g.version, 60).ignored, true);
+  // another player who also hit too early: first one wins the foul, theirs is dropped
+  assert.equal(g.act('p1', 'ring', 'b1', v, 70).ignored, true);
+  assert.equal(g.act('p1', 'ring', 'b2', g.version, 80).ignored, true);
+  assert.equal(g.act('p1', 'flip', 'b3', g.version, 80).ignored, true);
+  assert.deepEqual(g.players.map(p => p.misses), [1, 0, 0]);
+  g.tick(g.penalty.until);
+  assert.deepEqual(g.players.map(p => p.deck.length), [8, 11, 11], 'only p0 paid, once');
+  assert.equal(g.penalty, null);
+  // right after the pause, a press still aimed at the old table is dropped too
+  assert.deepEqual(g.act('p1', 'ring', 'b4', v, 5000), { stale: true });
+  assert.deepEqual(g.players.map(p => p.misses), [1, 0, 0]);
+});
