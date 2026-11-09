@@ -343,7 +343,7 @@ function penaltyMarkup() {
   const g = state.room.game, pen = g?.penalty;
   if (!pen || g.phase !== 'playing') return '';
   const giver = g.players.find(p => p.id === pen.from);
-  return `<div class="penalty-layer" data-penalty="${pen.id}" aria-hidden="true"><div class="penalty-banner">${escape(giver?.nickname ?? '')}님 오답! <strong>한 장씩 나눠 주기</strong><small>잠시 멈춤</small></div>${pen.to.map((id, i) => `<div class="penalty-card card-back" data-to="${escape(id)}" data-order="${i}"><span class="deck-pattern"></span></div>`).join('')}</div>`;
+  return `<div class="penalty-layer" data-penalty="${pen.id}" aria-hidden="true"><div class="penalty-banner">${escape(giver?.nickname ?? '')} 반칙!</div>${pen.to.map((id, i) => `<div class="penalty-card card-back" data-to="${escape(id)}" data-order="${i}"><span class="deck-pattern"></span></div>`).join('')}</div>`;
 }
 function playPenalty() {
   const layer = document.querySelector('.penalty-layer'), pen = state?.room?.game?.penalty;
